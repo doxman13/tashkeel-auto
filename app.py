@@ -127,6 +127,43 @@ st.set_page_config(layout="wide", page_title="Manga Arabic Diacritizer")
 st.title("Manga Arabic Diacritizer (Self-Study)")
 st.markdown("Upload your Arabic manga pages, crop the speech bubbles, and instantly extract and diacritize the text to help with your self-study!")
 
+# Inject Google Font 'Amiri' and custom CSS for high readability and size of Arabic script
+st.html("""
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* Define Arabic text class using Amiri font */
+        .arabic-text {
+            font-family: 'Amiri', serif !important;
+            direction: rtl !important;
+            text-align: right !important;
+        }
+        .arabic-large {
+            font-size: 38px !important;
+            line-height: 1.8 !important;
+        }
+        .arabic-medium {
+            font-size: 30px !important;
+            line-height: 1.6 !important;
+        }
+        .arabic-root {
+            font-size: 36px !important;
+            font-weight: bold !important;
+            letter-spacing: 6px !important;
+        }
+        
+        /* Inject styles into Streamlit native metric values to match Amiri font */
+        div[data-testid="stMetricValue"] {
+            font-family: 'Amiri', serif !important;
+            font-size: 36px !important;
+            line-height: 1.6 !important;
+            direction: rtl !important;
+            text-align: right !important;
+        }
+    </style>
+""")
+
 # Cache the OCR reader to avoid reloading on every interaction
 @st.cache_resource
 def load_ocr_model():
@@ -321,11 +358,11 @@ if uploaded_files:
                 # We render the original non-bidi'ed text because browsers handle standard Arabic 
                 # perfectly when dir="rtl" is specified. This provides the most natural look.
                 html_str = f"""
-                <div dir="rtl" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-                    <div style="font-size: 24px; padding: 15px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px; background-color: rgba(200, 200, 200, 0.1);">
+                <div dir="rtl" class="arabic-text">
+                    <div style="font-size: 30px; padding: 15px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px; background-color: rgba(200, 200, 200, 0.1); text-align: right;">
                         <strong>Raw:</strong> {extracted_text}
                     </div>
-                    <div style="font-size: 32px; padding: 15px; border: 2px solid #4CAF50; border-radius: 8px; color: #2E7D32; background-color: rgba(76, 175, 80, 0.05); line-height: 1.8;">
+                    <div class="arabic-large" style="padding: 15px; border: 2px solid #4CAF50; border-radius: 8px; color: #2E7D32; background-color: rgba(76, 175, 80, 0.05); text-align: right;">
                         <strong>Tashkeel:</strong> {diacritized_text}
                     </div>
                 </div>
@@ -382,8 +419,20 @@ if uploaded_files:
                             word_trans = "N/A"
                             root_trans = "N/A"
                         
-                        st.markdown(f"Analyzing word: **{word_to_analyze}** (Translation: *{word_trans}*)")
-                        st.info(f"🌱 **Extracted local root/stem:** {root_display} (Translation: *{root_trans}*)")
+                        st.markdown(f"""
+                        <div style="font-size: 20px; margin-bottom: 15px;">
+                            Analyzing word: <span class="arabic-text arabic-medium" style="font-weight: bold; color: #1E88E5;">{word_to_analyze}</span> (Translation: <em>{word_trans}</em>)
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Custom styled info box for local root with large Amiri font
+                        st.markdown(f"""
+                        <div style="background-color: rgba(2, 136, 209, 0.08); border-left: 6px solid #0288d1; padding: 15px; border-radius: 4px; margin-bottom: 15px;">
+                            <span style="font-size: 16px; font-weight: bold; color: #0288d1; display: block; margin-bottom: 5px;">🌱 Extracted local root/stem:</span>
+                            <span class="arabic-text arabic-root" style="color: #01579b; font-weight: bold;">{root_display}</span>
+                            <span style="font-size: 15px; color: #555; display: block; margin-top: 5px;">(Translation: <em>{root_trans}</em>)</span>
+                        </div>
+                        """, unsafe_allow_html=True)
                         
                         # Perform Step 4 via Gemini
                         api_key = get_gemini_api_key()
@@ -425,33 +474,50 @@ if uploaded_files:
                             ]
                             paradigm_translations = translate_words(sarf_words_to_translate)
                             
-                            sarf_details = {
-                                "Grammatical element": [
-                                    "Pattern / form (الوزن)",
-                                    "Past tense 3rd person (الماضي)",
-                                    "Present tense 3rd person (المضارع)",
-                                    "Verbal noun (المصدر)",
-                                    "Active participle (اسم الفاعل)",
-                                    "Passive participle (اسم المفعول)"
-                                ],
-                                "Arabic word (with tashkeel)": [
-                                    sarf_data.get('wazn', 'N/A'),
-                                    sarf_data.get('madi', 'N/A'),
-                                    sarf_data.get('mudari', 'N/A'),
-                                    sarf_data.get('masdar', 'N/A'),
-                                    sarf_data.get('ism_faail', 'N/A'),
-                                    sarf_data.get('ism_mafool', 'N/A')
-                                ],
-                                "English translation": [
-                                    "N/A",  # wazn is descriptive
-                                    paradigm_translations[0],
-                                    paradigm_translations[1],
-                                    paradigm_translations[2],
-                                    paradigm_translations[3],
-                                    paradigm_translations[4]
-                                ]
-                            }
-                            df_sarf = pd.DataFrame(sarf_details)
-                            st.table(df_sarf)
+                            # Render custom HTML table with beautiful styling and large Amiri font for Arabic words
+                            html_table = f"""
+                            <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-family: sans-serif; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 4px; overflow: hidden;">
+                                <thead>
+                                    <tr style="background-color: rgba(76, 175, 80, 0.12); border-bottom: 2px solid #4CAF50;">
+                                        <th style="padding: 12px; text-align: left; font-size: 15px; font-weight: bold; color: #1E4620;">Grammatical element</th>
+                                        <th style="padding: 12px; text-align: right; font-size: 15px; font-weight: bold; color: #1E4620; width: 40%;">Arabic word (with tashkeel)</th>
+                                        <th style="padding: 12px; text-align: left; font-size: 15px; font-weight: bold; color: #1E4620;">English translation</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr style="border-bottom: 1px solid rgba(0,0,0,0.08);">
+                                        <td style="padding: 12px; font-weight: bold; font-size: 14px;">Pattern / form (الوزن)</td>
+                                        <td class="arabic-text arabic-medium" style="padding: 12px; text-align: right; color: #2E7D32; font-weight: bold;">{sarf_data.get('wazn', 'N/A')}</td>
+                                        <td style="padding: 12px; color: #444; font-size: 14px;">N/A</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid rgba(0,0,0,0.08);">
+                                        <td style="padding: 12px; font-weight: bold; font-size: 14px;">Past tense 3rd person (الماضي)</td>
+                                        <td class="arabic-text arabic-large" style="padding: 12px; text-align: right; color: #2E7D32; font-weight: bold;">{sarf_data.get('madi', 'N/A')}</td>
+                                        <td style="padding: 12px; color: #444; font-size: 14px; font-style: italic;">{paradigm_translations[0]}</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid rgba(0,0,0,0.08);">
+                                        <td style="padding: 12px; font-weight: bold; font-size: 14px;">Present tense 3rd person (المضارع)</td>
+                                        <td class="arabic-text arabic-large" style="padding: 12px; text-align: right; color: #2E7D32; font-weight: bold;">{sarf_data.get('mudari', 'N/A')}</td>
+                                        <td style="padding: 12px; color: #444; font-size: 14px; font-style: italic;">{paradigm_translations[1]}</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid rgba(0,0,0,0.08);">
+                                        <td style="padding: 12px; font-weight: bold; font-size: 14px;">Verbal noun (المصدر)</td>
+                                        <td class="arabic-text arabic-large" style="padding: 12px; text-align: right; color: #2E7D32; font-weight: bold;">{sarf_data.get('masdar', 'N/A')}</td>
+                                        <td style="padding: 12px; color: #444; font-size: 14px; font-style: italic;">{paradigm_translations[2]}</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid rgba(0,0,0,0.08);">
+                                        <td style="padding: 12px; font-weight: bold; font-size: 14px;">Active participle (اسم الفاعل)</td>
+                                        <td class="arabic-text arabic-large" style="padding: 12px; text-align: right; color: #2E7D32; font-weight: bold;">{sarf_data.get('ism_faail', 'N/A')}</td>
+                                        <td style="padding: 12px; color: #444; font-size: 14px; font-style: italic;">{paradigm_translations[3]}</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid rgba(0,0,0,0.08);">
+                                        <td style="padding: 12px; font-weight: bold; font-size: 14px;">Passive participle (اسم المفعول)</td>
+                                        <td class="arabic-text arabic-large" style="padding: 12px; text-align: right; color: #2E7D32; font-weight: bold;">{sarf_data.get('ism_mafool', 'N/A')}</td>
+                                        <td style="padding: 12px; color: #444; font-size: 14px; font-style: italic;">{paradigm_translations[4]}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            """
+                            st.markdown(html_table, unsafe_allow_html=True)
 else:
     st.info("Please upload one or more manga pages to begin.")
