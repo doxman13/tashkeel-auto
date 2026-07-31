@@ -3,9 +3,12 @@ streamlit-cropper
 easyocr
 mishkal
 arabic-reshaper
+arabic_reshaper
 python-bidi
 Pillow
 numpy
+farasa
 farasapy
 deep-translator
 google-genai
+pytz
