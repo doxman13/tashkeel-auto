@@ -1,0 +1,11 @@
+streamlit
+streamlit-cropper
+easyocr
+mishkal
+arabic-reshaper
+python-bidi
+Pillow
+numpy
+farasapy
+deep-translator
+google-genai

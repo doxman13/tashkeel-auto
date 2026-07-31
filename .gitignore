@@ -1,0 +1,14 @@
+# Environments
+.venv/
+env/
+venv/
+ENV/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets (NEVER COMMIT THESE)
+.streamlit/secrets.toml
+.env
