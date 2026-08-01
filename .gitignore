@@ -12,3 +12,7 @@ __pycache__/
 # Secrets (NEVER COMMIT THESE)
 .streamlit/secrets.toml
 .env
+
+# Database & temp files
+*.db
+commands.txt

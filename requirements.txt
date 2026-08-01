@@ -12,3 +12,5 @@ farasapy
 deep-translator
 google-genai
 pytz
+pypdf
+pdf2image
