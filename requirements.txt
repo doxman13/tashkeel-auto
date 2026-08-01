@@ -14,3 +14,5 @@ google-genai
 pytz
 pypdf
 pdf2image
+edge-tts
+gTTS
