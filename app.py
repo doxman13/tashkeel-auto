@@ -1413,13 +1413,22 @@ if nav_page == "📖 Diacritizer & Analyzer":
                         raw_selected = strip_tashkeel(selected_word)
                         info = word_map.get(selected_word) or word_map.get(raw_selected)
                         
-                        try:
-                            stemmed = farasa_stemmer.stem(selected_word)
-                            clean_root = re.sub(r'[^\u0621-\u064A]', '', stemmed)
-                            root_display = " - ".join(list(clean_root)) if clean_root else "N/A"
-                        except Exception:
-                            root_display = "N/A"
+                        # 1. Grab Gemini's root from lookup object
+                        gemini_root = info.get("root") if info else None
 
+                        if gemini_root and gemini_root != "N/A":
+                            # Formats Gemini's "ب-س-م" cleanly to "ب - س - م"
+                            root_display = " - ".join(gemini_root.replace("-", " ").split())
+                        else:
+                            # 2. Fallback to Farasa ONLY if Gemini didn't return a root
+                            try:
+                                stemmed = farasa_stemmer.stem(selected_word)
+                                clean_root = re.sub(r'[^\u0621-\u064A]', '', stemmed)
+                                root_display = " - ".join(list(clean_root)) if clean_root else "N/A"
+                            except Exception:
+                                root_display = "N/A"
+
+                        # 3. Always render the card container (OUTSIDE the if/else block)
                         with st.container(border=True):
                             col_w1, col_w2 = st.columns([1, 2])
                             with col_w1:
@@ -1471,7 +1480,7 @@ if nav_page == "📖 Diacritizer & Analyzer":
                                     sub_type_val = info.get('sub_type', 'Noun')
                                     derived_val = info.get('derived', False)
                                     base_verb_val = info.get('base_verb')
-                                    root_val = info.get('root') or clean_root
+                                    root_val = info.get('root') or root_display
 
                                     st.markdown(f"**💡 Contextual Meaning:** {info.get('meaning', 'N/A')}")
                                     st.markdown(f"**🏷️ Category / Role:** {info.get('role', 'Unknown')}")
@@ -1479,14 +1488,13 @@ if nav_page == "📖 Diacritizer & Analyzer":
                                     if info.get('effect'):
                                         st.markdown(f"**⚡ Grammatical Effect:** {info.get('effect')}")
 
-                                    # "Generate Sarf" button condition: item.derived is True OR item.sub_type == 'Verb' OR item.base_verb is not None OR item.root is not None
                                     can_generate_sarf = derived_val or sub_type_val == 'Verb' or (base_verb_val is not None) or (root_val is not None)
                                     if can_generate_sarf:
                                         sarf_target_verb = base_verb_val if base_verb_val else selected_word
                                         if st.button(f"⚡ Generate Sarf for '{sarf_target_verb}'", key=f"btn_card_sarf_{selected_word}"):
                                             with st.spinner(f"Generating Sarf paradigm for base verb '{sarf_target_verb}'..."):
                                                 try:
-                                                    target_r = root_val if root_val else clean_root
+                                                    target_r = root_val if root_val else root_display
                                                     s_data = get_verb_analysis(sarf_target_verb, target_r)
                                                     st.session_state.verb_results = s_data
                                                     st.session_state.last_analyzed_verb = sarf_target_verb
