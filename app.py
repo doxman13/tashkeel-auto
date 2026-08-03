@@ -271,6 +271,180 @@ def build_word_meaning_map(verbs: list, nouns: list, particles: list) -> dict:
 
     return lookup
 
+
+def aggregate_vocabulary_across_entries(entries):
+    """Aggregate & deduplicate verbs, nouns, and particles across all saved study entries.
+
+    Words differing only in diacritics are merged into a single row; distinct
+    meanings are preserved when present. Returns (all_verbs, all_nouns, all_particles),
+    each a sorted list of dicts with keys: word, meaning, sub_type/category, derived,
+    base_verb, root/effect, count, sources.
+    """
+    verbs_index, nouns_index, particles_index = {}, {}, {}
+
+    def _ensure_record(item, defaults):
+        if isinstance(item, dict):
+            word = item.get("word", "")
+            record = {
+                "word": word,
+                "meanings": [m for m in [item.get("meaning", "")] if m],
+                "sub_type": item.get("sub_type", defaults["sub_type"]),
+                "derived": item.get("derived", defaults["derived"]),
+                "base_verb": item.get("base_verb"),
+                "root": item.get("root"),
+            }
+        else:
+            word = str(item)
+            record = {
+                "word": word,
+                "meanings": [],
+                "sub_type": defaults["sub_type"],
+                "derived": defaults["derived"],
+                "base_verb": None,
+                "root": None,
+            }
+        return word, record
+
+    def _ensure_particle_record(item):
+        if isinstance(item, dict):
+            word = item.get("word") or item.get("particle", "")
+            return {
+                "word": word,
+                "category": item.get("type", ""),
+                "effect": item.get("effect", ""),
+                "meanings": [m for m in [item.get("meaning", "")] if m],
+            }
+        else:
+            word = str(item)
+            return {
+                "word": word,
+                "category": "",
+                "effect": "",
+                "meanings": [],
+            }
+
+    for row in entries:
+        entry_id, timestamp, fname, img_b64, tashkeel, translation, verbs_str, nouns_str, particles_str, deep_sarf_str = row
+        source_info = {"id": entry_id, "timestamp": timestamp, "source": fname}
+
+        for idx, defaults, raw_json in (
+            (verbs_index, {"sub_type": "Verb", "derived": True}, verbs_str),
+            (nouns_index, {"sub_type": "Solid Noun", "derived": False}, nouns_str),
+        ):
+            try:
+                items = json.loads(raw_json) if raw_json else []
+            except Exception:
+                items = []
+            for item in items:
+                word, record = _ensure_record(item, defaults)
+                if not word:
+                    continue
+                key = strip_tashkeel(word)
+                if not key:
+                    continue
+                if key in idx:
+                    existing = idx[key]
+                    existing["count"] += 1
+                    existing["sources"].append(source_info)
+                    for m in record["meanings"]:
+                        if m not in existing["meanings"]:
+                            existing["meanings"].append(m)
+                    if not existing["base_verb"] and record["base_verb"]:
+                        existing["base_verb"] = record["base_verb"]
+                    if not existing["root"] and record["root"]:
+                        existing["root"] = record["root"]
+                else:
+                    record["count"] = 1
+                    record["sources"] = [source_info]
+                    idx[key] = record
+
+        try:
+            p_items = json.loads(particles_str) if particles_str else []
+        except Exception:
+            p_items = []
+        for item in p_items:
+            record = _ensure_particle_record(item)
+            word = record["word"]
+            if not word:
+                continue
+            key = strip_tashkeel(word)
+            if not key:
+                continue
+            if key in particles_index:
+                existing = particles_index[key]
+                existing["count"] += 1
+                existing["sources"].append(source_info)
+                for m in record["meanings"]:
+                    if m not in existing["meanings"]:
+                        existing["meanings"].append(m)
+                if not existing["category"] and record["category"]:
+                    existing["category"] = record["category"]
+                if not existing["effect"] and record["effect"]:
+                    existing["effect"] = record["effect"]
+            else:
+                record["count"] = 1
+                record["sources"] = [source_info]
+                particles_index[key] = record
+
+    def _finalize(records):
+        result = []
+        for r in records.values():
+            r["meaning"] = "; ".join(r["meanings"]) if r["meanings"] else ""
+            del r["meanings"]
+            seen_ids = set()
+            unique_sources = []
+            for s in r["sources"]:
+                if s["id"] not in seen_ids:
+                    seen_ids.add(s["id"])
+                    unique_sources.append(s)
+            r["sources"] = unique_sources
+            result.append(r)
+        return sorted(result, key=lambda x: (-x["count"], x["word"]))
+
+    return _finalize(verbs_index), _finalize(nouns_index), _finalize(particles_index)
+
+
+def _escape_html_attr(text: str) -> str:
+    """Escape characters that would break HTML attribute values."""
+    return text.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+@st.cache_data
+def build_interactive_tashkeel_html(diacritized_text: str, verbs_json: str, nouns_json: str, particles_json: str):
+    """Pre-compute interactive tashkeel HTML for both vowel-showing and vowel-hiding states.
+
+    The expensive Google Translate fallback calls only happen once per text version,
+    making the Show Vowels toggle feel instant. Returns (vowel_html, no_vowel_html, sentence_tokens).
+    """
+    verbs = json.loads(verbs_json) if verbs_json else []
+    nouns = json.loads(nouns_json) if nouns_json else []
+    particles = json.loads(particles_json) if particles_json else []
+
+    word_map = build_word_meaning_map(verbs, nouns, particles)
+    sentence_tokens = [w.strip() for w in re.split(r'[\s،؛؟\.\!\:\-"\']+', diacritized_text) if w.strip()]
+
+    vowel_spans = []
+    novowel_spans = []
+
+    for token in sentence_tokens:
+        raw_token = strip_tashkeel(token)
+        match_info = word_map.get(token) or word_map.get(raw_token)
+        if match_info:
+            tooltip_txt = f"{match_info.get('role', '')} | Meaning: {match_info.get('meaning', '')}"
+        else:
+            try:
+                unclass_trans = GoogleTranslator(source='ar', target='en').translate(raw_token or token)
+            except Exception:
+                unclass_trans = "N/A"
+            tooltip_txt = f"Unclassified Word | Meaning: {unclass_trans}"
+
+        safe_tooltip = _escape_html_attr(tooltip_txt)
+        vowel_spans.append(f'<span class="tashkeel-word" title="{safe_tooltip}">{token}</span>')
+        novowel_spans.append(f'<span class="tashkeel-word" title="{safe_tooltip}">{raw_token}</span>')
+
+    return " ".join(vowel_spans), " ".join(novowel_spans), sentence_tokens
+
+
 def render_sub_type_badge(sub_type: str, derived: bool, base_verb: str | None = None) -> str:
     """Generate HTML badge for sub_type and derived status."""
     badge_colors = {
@@ -816,7 +990,6 @@ st.html("""
         span.arabic-cell,
         td .arabic-cell {
             font-family: 'KFGQPC Uthman Taha Naskh', 'KFGQPC Uthmanic Script HAFS', 'Scheherazade New', 'Amiri', 'Trebuchet MS', Arial, Helvetica, sans-serif !important;
-            font-size: 20px !important;
             font-weight: 700 !important;
             line-height: 1.4 !important;
             direction: rtl !important;
@@ -825,7 +998,6 @@ st.html("""
         }
 
         /* 2. Text areas & inputs using requested font stack & RTL text alignment */
-        textarea, input,
         div[data-testid="stTextArea"] textarea,
         div[data-testid="stTextInput"] input,
         div[class*="st-key-diacritized_text"] textarea,
@@ -836,6 +1008,17 @@ st.html("""
             line-height: 1.6 !important;
             direction: rtl !important;
             text-align: right !important;
+        }
+
+        /* Force LTR + normal font on non-Arabic inputs (number, select, etc.) */
+        input[type="number"],
+        div[data-testid="stNumberInput"] input,
+        div[data-testid="stSelectbox"] div,
+        div[data-testid="stRadio"] label,
+        div[data-testid="stMultiSelect"] div {
+            direction: ltr !important;
+            text-align: left !important;
+            font-family: inherit !important;
         }
 
         /* 3. Interactive Word Pills Font Size */
@@ -948,6 +1131,24 @@ st.html("""
                 padding-right: 1rem !important;
             }
         }
+
+        /* Light clean background for specific main-content container */
+        .tashkeeled {
+            background: antiquewhite;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 12px;
+        }
+
+        /* Hover highlight for interactive tashkeel words */
+        .tashkeel-word {
+            cursor: pointer;
+            padding: 0 3px;
+        }
+        .tashkeel-word:hover {
+            background-color: rgba(33, 150, 243, 0.15);
+            border-radius: 4px;
+        }
     </style>
 """)
 
@@ -1055,7 +1256,12 @@ def show_diacritized_text_modal():
 st.sidebar.title("📌 Navigation")
 nav_page = st.sidebar.radio(
     "Go to page:",
-    ["📖 Diacritizer & Analyzer", "📚 Saved History & Anki Export"],
+    [
+        "📖 Diacritizer & Analyzer",
+        "📚 Saved History & Anki Export",
+        "🔍 Combined Vocabulary",
+        "🖼️ Saved Entry Gallery"
+    ],
     key="nav_page_selection"
 )
 
@@ -1152,22 +1358,23 @@ if nav_page == "📖 Diacritizer & Analyzer":
 
             st.sidebar.markdown("---")
             st.sidebar.subheader("📄 PDF Page Navigation")
-        
-            col_prev, col_next = st.sidebar.columns(2)
-        
-            if col_prev.button("⬅️ Previous", disabled=(st.session_state.pdf_page <= 1)):
+
+            col_prev, col_page, col_next = st.sidebar.columns([1, 2, 1])
+
+            if col_prev.button("⬅️", disabled=(st.session_state.pdf_page <= 1), width="stretch"):
                 st.session_state.pdf_page -= 1
-            
-            if col_next.button("Next ➡️", disabled=(st.session_state.pdf_page >= num_pages)):
-                st.session_state.pdf_page += 1
-            
-            st.sidebar.number_input(
+
+            col_page.number_input(
                 f"Page (1 of {num_pages})",
                 min_value=1,
                 max_value=num_pages,
                 step=1,
-                key="pdf_page"
+                key="pdf_page",
+                label_visibility="collapsed",
             )
+
+            if col_next.button("➡️", disabled=(st.session_state.pdf_page >= num_pages), width="stretch"):
+                st.session_state.pdf_page += 1
         
             if st.session_state.pdf_page != st.session_state.last_pdf_page:
                 st.session_state.extracted_text = ""
@@ -1493,30 +1700,17 @@ if nav_page == "📖 Diacritizer & Analyzer":
                     with col_thdr:
                         st.markdown("#### ✨ Tashkeel Text (Hover for Tooltip)")
                     with col_ttog:
+                        st.markdown('<div style="display: flex; align-items: end; justify-content: end; height: 100%;">', unsafe_allow_html=True)
                         show_vowels = st.toggle("Show Vowels", value=True, key="main_vowel_toggle")
+                        st.markdown("</div>", unsafe_allow_html=True)
 
-                    # Build word map and tokens early
-                    word_map = build_word_meaning_map(st.session_state.verbs, st.session_state.nouns, st.session_state.particles)
-                    sentence_tokens = [w.strip() for w in re.split(r'[\s،؛؟\.\!\:\-"\']+', diacritized_text) if w.strip()]
-
-                    tooltip_spans = []
-                    for token in sentence_tokens:
-                        raw_token = strip_tashkeel(token)
-                        match_info = word_map.get(token) or word_map.get(raw_token)
-                        if match_info:
-                            tooltip_txt = f"{match_info.get('role','')} | Meaning: {match_info.get('meaning','')}"
-                        else:
-                            try:
-                                unclass_trans = GoogleTranslator(source='ar', target='en').translate(raw_token or token)
-                            except Exception:
-                                unclass_trans = "N/A"
-                            tooltip_txt = f"Unclassified Word | Meaning: {unclass_trans}"
-
-                        display_word = token if show_vowels else raw_token
-                        span = f'<span title="{tooltip_txt}" style="cursor: pointer; padding: 0 3px;">{display_word}</span>'
-                        tooltip_spans.append(span)
-
-                    interactive_tashkeel_html = " ".join(tooltip_spans)
+                    v_html, nv_html, sentence_tokens = build_interactive_tashkeel_html(
+                        diacritized_text,
+                        json.dumps(st.session_state.verbs),
+                        json.dumps(st.session_state.nouns),
+                        json.dumps(st.session_state.particles),
+                    )
+                    interactive_tashkeel_html = v_html if show_vowels else nv_html
 
                     # 24px, not bold, no dotted line, no border box
                     st.markdown(f"""
@@ -1810,7 +2004,8 @@ if nav_page == "📖 Diacritizer & Analyzer":
                                 
                         with tab2:
                             st.subheader("Noun Analysis")
-                        
+                            word_map = build_word_meaning_map(detected_verbs, detected_nouns, detected_particles)
+
                             # Populate noun selectbox with fallback to custom input
                             if detected_nouns:
                                 noun_options = []
@@ -2125,6 +2320,7 @@ elif nav_page == "📚 Saved History & Anki Export":
             key="sidebar_entry_radio"
         )
 
+
         # 2. Main Area TOP: Summary Table & Anki Deck Export
         st.subheader(f"Summary Table & Anki Deck Export ({len(entries)} Entries)")
         
@@ -2187,12 +2383,13 @@ elif nav_page == "📚 Saved History & Anki Export":
                 use_container_width=True
             )
 
+        st.markdown("---")
+
         # 3. Full Entry Inspector View Below
         selected_row = entry_map[selected_option]
         entry_id, timestamp, fname, img_b64, tashkeel, translation, verbs_str, nouns_str, particles_str, deep_sarf_str = selected_row
         
-        st.markdown("---")
-        col_hdr, col_del = st.columns([4, 1])
+        col_hdr, col_del, col_htts = st.columns([4, 1, 1])
         with col_hdr:
             st.markdown(f"### Inspector View: Entry #{entry_id} (`{fname}` — *{timestamp}*)")
         with col_del:
@@ -2200,8 +2397,10 @@ elif nav_page == "📚 Saved History & Anki Export":
                 delete_study_entry(entry_id)
                 st.success(f"Deleted entry #{entry_id}!")
                 st.rerun()
+        with col_htts:
+                render_arabic_tts(tashkeel, tts_engine_choice, key_suffix=f"hist_{entry_id}")
 
-        col_img, col_details = st.columns([1, 2])
+        col_img, col_details = st.columns([2, 2])
         
         with col_img:
             if img_b64:
@@ -2236,37 +2435,26 @@ elif nav_page == "📚 Saved History & Anki Export":
         saved_word_map = build_word_meaning_map(saved_verbs, saved_nouns, saved_particles)
         saved_tokens = [w.strip() for w in re.split(r'[\s،؛؟\.\!\:\-"\']+', tashkeel) if w.strip()]
 
-        col_hlbl, col_htog, col_htts = st.columns([3, 2, 2])
-        with col_hlbl:
-            st.markdown("#### ✨ Tashkeel Text")
-        with col_htog:
-            show_saved_vowels = st.toggle("Show Vowels", value=True, key=f"hist_vowel_toggle_{entry_id}")
-        with col_htts:
-            render_arabic_tts(tashkeel, tts_engine_choice, key_suffix=f"hist_{entry_id}")
-
-        tooltip_spans = []
-        for token in saved_tokens:
-            raw_token = strip_tashkeel(token)
-            match_info = saved_word_map.get(token) or saved_word_map.get(raw_token)
-            if match_info:
-                tooltip_txt = f"{match_info.get('role','')} | Meaning: {match_info.get('meaning','')}"
-            else:
-                try:
-                    unclass_trans = GoogleTranslator(source='ar', target='en').translate(raw_token or token)
-                except Exception:
-                    unclass_trans = "N/A"
-                tooltip_txt = f"Unclassified Word | Meaning: {unclass_trans}"
-
-            display_token = token if show_saved_vowels else raw_token
-            span = f'<span title="{tooltip_txt}" style="cursor: pointer; padding: 0 3px;">{display_token}</span>'
-            tooltip_spans.append(span)
-
-        interactive_saved_tashkeel = " ".join(tooltip_spans)
-
         with col_details:
+            col_hlbl, col_htog = st.columns([4, 1])
+            with col_hlbl:
+                st.markdown("#### ✨ Tashkeel Text")
+            with col_htog:
+                st.markdown('<div style="display: flex; width: 100%; height: 100%;">', unsafe_allow_html=True)
+                show_saved_vowels = st.toggle("Show Vowels", value=True, key=f"hist_vowel_toggle_{entry_id}")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            v_html, nv_html, _ = build_interactive_tashkeel_html(
+                tashkeel,
+                verbs_str or "",
+                nouns_str or "",
+                particles_str or "",
+            )
+            interactive_saved_tashkeel = v_html if show_saved_vowels else nv_html
+
             st.markdown(f"""
-            <div dir="rtl" class="arabic-text" style="font-size: 24px !important; font-weight: normal !important; border: none !important; background: transparent !important; padding: 4px 0 !important; color: inherit !important; text-align: right !important; line-height: 1.8 !important; margin-bottom: 12px;">
-                 {interactive_saved_tashkeel}
+            <div dir="rtl" class="arabic-text tashkeeled">
+            {interactive_saved_tashkeel}
             </div>
             """, unsafe_allow_html=True)
             
@@ -2743,5 +2931,208 @@ elif nav_page == "📚 Saved History & Anki Export":
                     st.json(saved_deep_sarf["noun_sarf"])
     else:
         st.info("No entries saved in the database yet. Process a crop on the Diacritizer page and click '💾 Save Entry to Database'!")
+elif nav_page == "🔍 Combined Vocabulary":
+    st.title("🔍 Combined Vocabulary Across All Entries")
+
+    entries = get_all_study_entries()
+    if not entries:
+        st.info("No entries saved in the database yet. Process a crop on the 📖 Diacritizer & Analyzer page and save an entry.")
+    else:
+        all_verbs, all_nouns, all_particles = aggregate_vocabulary_across_entries(entries)
+        total_verb_occ = sum(r["count"] for r in all_verbs)
+        total_noun_occ = sum(r["count"] for r in all_nouns)
+        total_particle_occ = sum(r["count"] for r in all_particles)
+
+        st.markdown(
+            f"This page aggregates and deduplicates every verb, noun, and particle extracted from **{len(entries)}** "
+            f"saved entries, giving you a master vocabulary list with source references."
+        )
+        st.space("medium")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric(label="Saved entries", value=len(entries))
+        with col2:
+            st.metric(label="Unique verbs (فِعْل)", value=len(all_verbs))
+        with col3:
+            st.metric(label="Unique nouns (اسْم)", value=len(all_nouns))
+        with col4:
+            st.metric(label="Total occurrences", value=total_verb_occ + total_noun_occ + total_particle_occ)
+
+        st.space("medium")
+        tab_v, tab_n, tab_p = st.tabs([
+            f"⚙️ All Verbs ({len(all_verbs)})",
+            f"🏷️ All Nouns ({len(all_nouns)})",
+            f"📌 All Particles ({len(all_particles)})",
+        ])
+
+        with tab_v:
+            if all_verbs:
+                v_rows = []
+                for v in all_verbs:
+                    sources_str = ", ".join(f"#{s['id']}" for s in v["sources"])
+                    v_rows.append({
+                        "Word (الْكَلِمَة)": v["word"],
+                        "Meaning (الْمَعْنَى)": v["meaning"] or "N/A",
+                        "Type (النَّوْع)": v["sub_type"],
+                        "Derived (مُشْتَقّ)": "Yes ⚡" if v["derived"] else "No",
+                        "Base Verb (الأَصْل)": v["base_verb"] if v["base_verb"] else "N/A",
+                        "Root (الْجَذْر)": v["root"] if v["root"] else "N/A",
+                        "Occurrences": v["count"],
+                        "Source Entries (#)": sources_str,
+                    })
+                v_df = pd.DataFrame(v_rows)
+                st.caption(
+                    f"Showing {len(v_df)} unique verbs, deduplicated across all saved entries. "
+                    ":orange[Occurrences] counts how many entries each verb appeared in."
+                )
+                render_custom_table(v_df)
+                v_csv = v_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="Download all verbs as CSV",
+                    icon=":material/download:",
+                    data=v_csv,
+                    file_name="combined_verbs.csv",
+                    mime="text/csv",
+                    key="download_combined_verbs",
+                    width="stretch",
+                )
+            else:
+                st.caption("No verbs found across saved entries.")
+
+        with tab_n:
+            if all_nouns:
+                n_rows = []
+                for n in all_nouns:
+                    sources_str = ", ".join(f"#{s['id']}" for s in n["sources"])
+                    n_rows.append({
+                        "Word (الْكَلِمَة)": n["word"],
+                        "Meaning (الْمَعْنَى)": n["meaning"] or "N/A",
+                        "Type (النَّوْع)": n["sub_type"],
+                        "Derived (مُشْتَقّ)": "Yes ⚡" if n["derived"] else "No",
+                        "Base Verb (الأَصْل)": n["base_verb"] if n["base_verb"] else "N/A",
+                        "Root (الْجَذْر)": n["root"] if n["root"] else "N/A",
+                        "Occurrences": n["count"],
+                        "Source Entries (#)": sources_str,
+                    })
+                n_df = pd.DataFrame(n_rows)
+                st.caption(
+                    f"Showing {len(n_df)} unique nouns, deduplicated across all saved entries. "
+                    ":orange[Occurrences] counts how many entries each noun appeared in."
+                )
+                render_custom_table(n_df)
+                n_csv = n_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="Download all nouns as CSV",
+                    icon=":material/download:",
+                    data=n_csv,
+                    file_name="combined_nouns.csv",
+                    mime="text/csv",
+                    key="download_combined_nouns",
+                    width="stretch",
+                )
+            else:
+                st.caption("No nouns found across saved entries.")
+
+        with tab_p:
+            if all_particles:
+                p_rows = []
+                for p in all_particles:
+                    sources_str = ", ".join(f"#{s['id']}" for s in p["sources"])
+                    p_rows.append({
+                        "Word (الْحَرْف)": p["word"],
+                        "Category (النَّوْع)": p["category"] or "N/A",
+                        "Meaning (الْمَعْنَى)": p["meaning"] or "N/A",
+                        "Grammatical Effect (الأَثَر الإِعْرَابِي)": p["effect"] or "N/A",
+                        "Occurrences": p["count"],
+                        "Source Entries (#)": sources_str,
+                    })
+                p_df = pd.DataFrame(p_rows)
+                st.caption(
+                    f"Showing {len(p_df)} unique particles, deduplicated across all saved entries. "
+                    ":orange[Occurrences] counts how many entries each particle appeared in."
+                )
+                render_custom_table(p_df)
+                p_csv = p_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="Download all particles as CSV",
+                    icon=":material/download:",
+                    data=p_csv,
+                    file_name="combined_particles.csv",
+                    mime="text/csv",
+                    key="download_combined_particles",
+                    width="stretch",
+                )
+            else:
+                st.caption("No particles found across saved entries.")
+elif nav_page == "🖼️ Saved Entry Gallery":
+    st.title("🖼️ Saved Entry Gallery")
+
+    entries = get_all_study_entries()
+    if not entries:
+        st.info("No entries saved in the database yet. Process a crop on the 📖 Diacritizer & Analyzer page and save an entry.")
+    else:
+        entry_options = []
+        entry_map = {}
+        for row in entries:
+            entry_id, timestamp, fname, img_b64, tashkeel, translation, verbs_str, nouns_str, particles_str, deep_sarf_str = row
+            snippet = tashkeel[:35] + "..." if len(tashkeel) > 35 else tashkeel
+            label = f"[#{entry_id}] {timestamp} | {fname} — {snippet}"
+            entry_options.append(label)
+            entry_map[label] = row
+
+        if "gallery_multiselect" not in st.session_state:
+            st.session_state.gallery_multiselect = entry_options
+
+        selected_labels = st.sidebar.multiselect(
+            "Select entries to display:",
+            options=entry_options,
+            key="gallery_multiselect",
+        )
+
+        if not selected_labels:
+            st.info("Select one or more entries from the sidebar to view them here.")
+        else:
+            selected_rows = [entry_map[l] for l in selected_labels if l in entry_map]
+            selected_rows.sort(key=lambda r: r[0])
+
+            st.markdown(
+                f"Displaying **{len(selected_rows)}** selected entries "
+                f"(oldest → newest, by entry #):"
+            )
+            st.space("medium")
+
+            for row in selected_rows:
+                entry_id, timestamp, fname, img_b64, tashkeel, translation, verbs_str, nouns_str, particles_str, deep_sarf_str = row
+
+                st.markdown(f"### Entry #{entry_id} — `{fname}` — *{timestamp}*")
+
+                if img_b64:
+                    try:
+                        img_bytes = base64.b64decode(img_b64)
+                        saved_pil_img = Image.open(io.BytesIO(img_bytes))
+                        st.image(saved_pil_img, caption=f"Crop from {fname}", width="stretch")
+                    except Exception as e:
+                        st.warning(f"Could not load image: {e}")
+                else:
+                    st.caption("No image data stored for this entry.")
+
+                if tashkeel:
+                    st.markdown("**Tashkeel text:**")
+                    st.markdown(
+                        f"""<div dir="rtl" class="arabic-text arabic-large" style="padding: 12px; border: 2px solid #4CAF50; border-radius: 8px; color: #2E7D32; background-color: rgba(76, 175, 80, 0.05); margin-bottom: 12px; text-align: right;">
+                         {tashkeel}
+                    </div>""",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.caption("No tashkeel text recorded.")
+
+                if translation:
+                    st.info(f"**English Translation:** {translation}")
+                else:
+                    st.caption("No translation recorded.")
+
+                st.space("medium")
+                st.divider()
 else:
     st.info("Please upload one or more manga pages to begin.")
