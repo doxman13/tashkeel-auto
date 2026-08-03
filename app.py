@@ -1138,6 +1138,14 @@ st.html("""
             border-radius: 12px;
             padding: 20px;
             margin-bottom: 12px;
+            color: #1a1a1a;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .tashkeeled {
+                background: #2b2b2b;
+                color: #e0e0e0;
+            }
         }
 
         /* Hover highlight for interactive tashkeel words */
