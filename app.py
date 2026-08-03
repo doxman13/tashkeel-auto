@@ -721,9 +721,18 @@ def translate_words(words_list: list) -> list:
 
 
 # Page config
-st.set_page_config(layout="wide", page_title="Manga Arabic Diacritizer")
-st.title("Manga Arabic Diacritizer (Self-Study)")
-st.markdown("Upload your Arabic manga pages, crop the speech bubbles, and instantly extract and diacritize the text to help with your self-study!")
+st.set_page_config(layout="wide", page_title="Arabic Diacritizer & Analyzer", page_icon=":material/translate:")
+
+# Hero banner
+st.html("""
+<div class="app-hero">
+    <div class="app-hero-icon">📖</div>
+    <div>
+        <p class="app-hero-title">Arabic Diacritizer & Analyzer</p>
+        <p class="app-hero-sub">Upload manga pages or PDFs, crop speech bubbles, extract & diacritize Arabic text, and study grammar in depth.</p>
+    </div>
+</div>
+""")
 
 # Inject WebFont definitions for KFGQPC Uthman Taha Naskh & HAFS and custom CSS for Arabic rendering
 st.html("""
@@ -858,6 +867,87 @@ st.html("""
             font-family: 'KFGQPC Uthman Taha Naskh', 'KFGQPC Uthmanic Script HAFS', 'Scheherazade New', 'Amiri', 'Trebuchet MS', Arial, Helvetica, sans-serif !important;
             font-size: 20px !important;
         }
+
+        /* Hero banner */
+        .app-hero {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%);
+            border: 1px solid #4338ca;
+            border-radius: 12px;
+            padding: 20px 28px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .app-hero-icon { font-size: 38px; line-height: 1; }
+        .app-hero-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #e0e7ff;
+            margin: 0;
+            line-height: 1.2;
+        }
+        .app-hero-sub {
+            font-size: 13px;
+            color: #a5b4fc;
+            margin: 6px 0 0 0;
+        }
+
+        /* File status strip */
+        .file-status-strip {
+            background: rgba(99, 102, 241, 0.08);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 13px;
+            color: #a5b4fc;
+            margin-bottom: 10px;
+        }
+
+        /* Centered 1280px Main Container */
+        section.main .block-container,
+        div[data-testid="stAppViewBlockContainer"] {
+            max-width: 1280px !important;
+            padding-left: 2rem !important;
+            padding-right: 2rem !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        }
+
+        /* Sticky Left Column on Desktop Web View */
+        @media (min-width: 769px) {
+            div[data-testid="stColumn"]:nth-of-type(1),
+            div[data-testid="column"]:nth-of-type(1) {
+                position: sticky !important;
+                top: 3.5rem !important;
+                align-self: flex-start !important;
+                z-index: 90 !important;
+                max-height: calc(100vh - 4.5rem) !important;
+                overflow: hidden !important;
+                padding-right: 0.5rem !important;
+            }
+        }
+
+        /* Scrollable Cropper Viewport Container */
+        div[data-testid="stCustomComponentV1"] {
+            width: 100% !important;
+            max-width: 100% !important;
+            max-height: 70vh !important;
+            overflow: auto !important;
+        }
+
+        /* Mobile overrides */
+        @media (max-width: 768px) {
+            .arabic-text { font-size: 20px !important; }
+            .arabic-large { font-size: 22px !important; }
+            .app-hero { padding: 16px 18px; flex-direction: column; align-items: flex-start; }
+            .app-hero-title { font-size: 18px; }
+            section.main .block-container,
+            div[data-testid="stAppViewBlockContainer"] {
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
+            }
+        }
     </style>
 """)
 
@@ -933,6 +1023,33 @@ def process_text_for_display(text):
     reshaped_text = arabic_reshaper.reshape(text)
     bidi_text = get_display(reshaped_text)
     return bidi_text
+
+# ── Top-Level Centered Modals for Text Inspection ──
+@st.dialog("📄 Raw Extracted Text")
+def show_raw_text_modal():
+    raw_text = st.session_state.get("extracted_text", "")
+    st.caption("Copy or edit the raw extracted text below:")
+    bidi_raw = process_text_for_display(raw_text)
+    st.text_area("Raw Text (Editable / Copyable)", value=bidi_raw, height=130, key="modal_raw_area")
+    st.markdown("#### 🔍 Raw Text (Large Font)")
+    st.markdown(f"""
+    <div dir="rtl" class="arabic-text" style="font-size: 24px !important; font-weight: normal !important; padding: 12px; border: 1px solid rgba(128,128,128,0.2); border-radius: 8px; text-align: right; line-height: 1.8;">
+        {raw_text}
+    </div>
+    """, unsafe_allow_html=True)
+
+@st.dialog("✨ Diacritized Text (Tashkeel)")
+def show_diacritized_text_modal():
+    diacritized_text = st.session_state.get("diacritized_text", "")
+    st.caption("Copy or edit the diacritized text below:")
+    bidi_diacritized = process_text_for_display(diacritized_text)
+    st.text_area("Tashkeel Text (Editable / Copyable)", value=bidi_diacritized, height=130, key="modal_diacritized_area")
+    st.markdown("#### ✨ Diacritized Text (Large Font)")
+    st.markdown(f"""
+    <div dir="rtl" class="arabic-text" style="font-size: 24px !important; font-weight: normal !important; padding: 12px; border: 1px solid rgba(128,128,128,0.2); border-radius: 8px; text-align: right; line-height: 1.8;">
+        {diacritized_text}
+    </div>
+    """, unsafe_allow_html=True)
 
 # Sidebar Navigation Menu
 st.sidebar.title("📌 Navigation")
@@ -1137,57 +1254,53 @@ if nav_page == "📖 Diacritizer & Analyzer":
             col_ctrl1, col_ctrl2 = st.columns([3, 1])
             with col_ctrl1:
                 zoom_val = st.slider("🔍 Zoom Level", min_value=1.0, max_value=3.0, value=st.session_state.zoom_level, step=0.25, key="zoom_level")
+                is_pan_mode = st.toggle("🖐️ Pan Mode (Click & Drag to Scroll)", value=False, help="Enable this to click and drag the zoomed image. Disable to draw a crop box.")
             with col_ctrl2:
                 st.write("")  # spacing
                 st.write("")
                 st.button("🔄 Reset View", use_container_width=True, on_click=reset_view_callback)
                 
-            col_pan1, col_pan2 = st.columns(2)
-            disabled_pan = (zoom_val == 1.0)
-            with col_pan1:
-                pan_x_val = st.slider("↔️ Horizontal Pan", min_value=-1.0, max_value=1.0, value=st.session_state.pan_x, step=0.02, disabled=disabled_pan, key="pan_x")
-            with col_pan2:
-                pan_y_val = st.slider("↕️ Vertical Pan", min_value=-1.0, max_value=1.0, value=st.session_state.pan_y, step=0.02, disabled=disabled_pan, key="pan_y")
-
             # Fit image to container max width (700px) so giant images/PDFs fit cleanly in #root at 1.0x
             base_img = fit_image_to_max_width(img, max_width=700)
 
-            # Obtain zoomed image, scaled up proportionally to magnify details
-            zoomed_img = get_zoomed_viewport(base_img, zoom_val, pan_x_val, pan_y_val)
+            # Obtain zoomed image, scaled up proportionally to magnify details for native scrolling
+            if zoom_val > 1.0:
+                new_w = int(base_img.width * zoom_val)
+                new_h = int(base_img.height * zoom_val)
+                zoomed_img = base_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            else:
+                zoomed_img = base_img
 
-            # Inject dynamic CSS: unclip parent wrappers & set explicit iframe dimensions
+            pointer_events = "none" if is_pan_mode else "auto"
+            cursor_style = "grab" if is_pan_mode else "crosshair"
+
+            # Inject dynamic CSS and JS for drag-to-scroll feature
             st.markdown(f"""
                 <style>
-                    /* Unclip Streamlit column wrappers so scrollbars can render */
-                    div[data-testid="column"]:nth-of-type(1) {{
-                        overflow: visible !important;
-                    }}
-                    div[data-testid="column"]:nth-of-type(1) div[data-testid="stVerticalBlock"] {{
-                        overflow: visible !important;
-                    }}
-                    div[data-testid="column"]:nth-of-type(1) div[data-testid="stElementContainer"],
-                    div[data-testid="column"]:nth-of-type(1) div.stElementContainer,
-                    div[data-testid="stCustomComponentV1"],
-                    div.stCropper {{
+                    /* Target the immediate wrapper of the iframe */
+                    div:has(> iframe) {{
+                        cursor: {cursor_style} !important;
                         overflow: auto !important;
-                        max-height: 700px !important;
+                        max-height: 70vh !important;
                         max-width: 100% !important;
-                        border: 2px solid #e0e0e0 !important;
-                        border-radius: 8px !important;
-                        background-color: #fafafa !important;
+                        width: 100% !important;
                     }}
-                    /* Force component iframe to expand to zoomed_img dimensions */
-                    div[data-testid="column"]:nth-of-type(1) iframe {{
+                    div:has(> iframe):active {{
+                        cursor: {'grabbing' if is_pan_mode else 'crosshair'} !important;
+                    }}
+                    iframe {{
                         width: {zoomed_img.width}px !important;
                         height: {zoomed_img.height}px !important;
                         min-width: {zoomed_img.width}px !important;
                         min-height: {zoomed_img.height}px !important;
+                        max-width: none !important;
+                        pointer-events: {pointer_events} !important;
                     }}
                 </style>
             """, unsafe_allow_html=True)
 
-            # Interactive cropping tool on the zoomed image (key includes zoom and pan values to force remount)
-            cropper_key = f"cropper_{selected_file_name}_z{zoom_val}_px{pan_x_val}_py{pan_y_val}"
+            # Interactive cropping tool on the zoomed image (key includes zoom value to force remount)
+            cropper_key = f"cropper_{selected_file_name}_z{zoom_val}"
             if is_pdf:
                 cropper_key += f"_p{st.session_state.pdf_page}"
             
@@ -1200,6 +1313,48 @@ if nav_page == "📖 Diacritizer & Analyzer":
                 should_resize_image=False,
                 key=cropper_key
             )
+
+            if is_pan_mode:
+                st.components.v1.html("""
+                <script>
+                    const parentDoc = window.parent.document;
+                    // Find the container that actually has the scrollbars (parent of the iframe)
+                    const iframes = parentDoc.querySelectorAll('iframe');
+                    let cropper = null;
+                    for (let iframe of iframes) {
+                        const computedStyle = parentDoc.defaultView.getComputedStyle(iframe);
+                        if (computedStyle.pointerEvents === 'none') {
+                            cropper = iframe.parentElement;
+                            break;
+                        }
+                    }
+                    
+                    if (cropper) {
+                        let isDown = false;
+                        let startX, startY, scrollLeft, scrollTop;
+
+                        cropper.onmousedown = (e) => {
+                            isDown = true;
+                            startX = e.pageX - cropper.offsetLeft;
+                            startY = e.pageY - cropper.offsetTop;
+                            scrollLeft = cropper.scrollLeft;
+                            scrollTop = cropper.scrollTop;
+                        };
+                        cropper.onmouseleave = () => { isDown = false; };
+                        cropper.onmouseup = () => { isDown = false; };
+                        cropper.onmousemove = (e) => {
+                            if (!isDown) return;
+                            e.preventDefault();
+                            const x = e.pageX - cropper.offsetLeft;
+                            const y = e.pageY - cropper.offsetTop;
+                            const walkX = (x - startX) * 1.5;
+                            const walkY = (y - startY) * 1.5;
+                            cropper.scrollLeft = scrollLeft - walkX;
+                            cropper.scrollTop = scrollTop - walkY;
+                        };
+                    }
+                </script>
+                """, height=0)
         
             # Map cropped area back to full native image resolution for Step 2
             if cropped_img is not None and zoomed_img is not None and zoomed_img.width > 0:
@@ -1320,46 +1475,30 @@ if nav_page == "📖 Diacritizer & Analyzer":
                     extracted_text = st.session_state.extracted_text
                     diacritized_text = st.session_state.diacritized_text
                 
-                    # Apply bidi/reshaper for text area (which doesn't natively support HTML RTL styling)
-                    bidi_raw = process_text_for_display(extracted_text)
-                    bidi_diacritized = process_text_for_display(diacritized_text)
-                
-                    st.markdown("### Raw Extracted Text")
-                    st.text_area(
-                        "Raw Text (Editable / Copyable)", 
-                        value=bidi_raw, 
-                        height=100, 
-                        key="raw_text"
-                    )
-
-                    # Part 1: Raw Large Font Native Render (Right below raw_text textarea)
-                    st.markdown("#### 🔍 Raw Text (Large Font)")
-                    st.markdown(f"""
-                    <div dir="rtl" class="arabic-text" style="margin-top: 2px; margin-bottom: 15px;">
-                        <div style="font-size: 28px; padding: 12px 16px; border: 1px solid #ddd; border-radius: 8px; background-color: rgba(200, 200, 200, 0.1); text-align: right;">
-                            {extracted_text}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                    col_lbl, col_tts = st.columns([3, 2])
-                    with col_lbl:
-                        st.markdown("### Diacritized Text (Tashkeel)")
+                    # Top Toolbar: Centered Action Buttons & TTS
+                    col_m1, col_m2, col_tts = st.columns([2, 2, 3])
+                    with col_m1:
+                        if st.button("📄 Raw Text", key="btn_open_raw_modal", icon=":material/description:", use_container_width=True):
+                            show_raw_text_modal()
+                    with col_m2:
+                        if st.button("✨ Diacritized Text", key="btn_open_diacritized_modal", icon=":material/edit_note:", use_container_width=True):
+                            show_diacritized_text_modal()
                     with col_tts:
                         render_arabic_tts(diacritized_text, tts_engine_choice, key_suffix="full_sentence")
 
-                    st.text_area(
-                        "Tashkeel Text (Editable / Copyable)", 
-                        value=bidi_diacritized, 
-                        height=100, 
-                        key="diacritized_text"
-                    )
+                    st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
+
+                    # Tashkeel Text Header & Vowel Toggle
+                    col_thdr, col_ttog = st.columns([3, 2])
+                    with col_thdr:
+                        st.markdown("#### ✨ Tashkeel Text (Hover for Tooltip)")
+                    with col_ttog:
+                        show_vowels = st.toggle("Show Vowels", value=True, key="main_vowel_toggle")
 
                     # Build word map and tokens early
                     word_map = build_word_meaning_map(st.session_state.verbs, st.session_state.nouns, st.session_state.particles)
                     sentence_tokens = [w.strip() for w in re.split(r'[\s،؛؟\.\!\:\-"\']+', diacritized_text) if w.strip()]
 
-                    # Part 2: Tashkeel Large Font Native Render with Hover Tooltips (Right below diacritized_text textarea)
                     tooltip_spans = []
                     for token in sentence_tokens:
                         raw_token = strip_tashkeel(token)
@@ -1373,17 +1512,16 @@ if nav_page == "📖 Diacritizer & Analyzer":
                                 unclass_trans = "N/A"
                             tooltip_txt = f"Unclassified Word | Meaning: {unclass_trans}"
 
-                        span = f'<span title="{tooltip_txt}" style="cursor: pointer; border-bottom: 2px dotted #4CAF50; padding: 0 2px;">{token}</span>'
+                        display_word = token if show_vowels else raw_token
+                        span = f'<span title="{tooltip_txt}" style="cursor: pointer; padding: 0 3px;">{display_word}</span>'
                         tooltip_spans.append(span)
 
                     interactive_tashkeel_html = " ".join(tooltip_spans)
 
-                    st.markdown("#### ✨ Tashkeel Text (Large Font - Hover for Tooltip)")
+                    # 24px, not bold, no dotted line, no border box
                     st.markdown(f"""
-                    <div dir="rtl" class="arabic-text" style="margin-top: 2px; margin-bottom: 15px;">
-                        <div class="arabic-large" style="padding: 12px 16px; border: 2px solid #4CAF50; border-radius: 8px; color: #2E7D32; background-color: rgba(76, 175, 80, 0.05); text-align: right;">
-                            {interactive_tashkeel_html}
-                        </div>
+                    <div dir="rtl" class="arabic-text" style="font-size: 24px !important; font-weight: normal !important; border: none !important; background: transparent !important; padding: 4px 0 !important; color: inherit !important; text-align: right !important; line-height: 1.8 !important; margin-bottom: 15px;">
+                        {interactive_tashkeel_html}
                     </div>
                     """, unsafe_allow_html=True)
                 
@@ -2098,6 +2236,14 @@ elif nav_page == "📚 Saved History & Anki Export":
         saved_word_map = build_word_meaning_map(saved_verbs, saved_nouns, saved_particles)
         saved_tokens = [w.strip() for w in re.split(r'[\s،؛؟\.\!\:\-"\']+', tashkeel) if w.strip()]
 
+        col_hlbl, col_htog, col_htts = st.columns([3, 2, 2])
+        with col_hlbl:
+            st.markdown("#### ✨ Tashkeel Text")
+        with col_htog:
+            show_saved_vowels = st.toggle("Show Vowels", value=True, key=f"hist_vowel_toggle_{entry_id}")
+        with col_htts:
+            render_arabic_tts(tashkeel, tts_engine_choice, key_suffix=f"hist_{entry_id}")
+
         tooltip_spans = []
         for token in saved_tokens:
             raw_token = strip_tashkeel(token)
@@ -2111,20 +2257,15 @@ elif nav_page == "📚 Saved History & Anki Export":
                     unclass_trans = "N/A"
                 tooltip_txt = f"Unclassified Word | Meaning: {unclass_trans}"
 
-            span = f'<span title="{tooltip_txt}" style="cursor: pointer; border-bottom: 2px dotted #4CAF50; padding: 0 2px;">{token}</span>'
+            display_token = token if show_saved_vowels else raw_token
+            span = f'<span title="{tooltip_txt}" style="cursor: pointer; padding: 0 3px;">{display_token}</span>'
             tooltip_spans.append(span)
 
         interactive_saved_tashkeel = " ".join(tooltip_spans)
 
         with col_details:
-            col_hlbl, col_htts = st.columns([3, 2])
-            with col_hlbl:
-                st.markdown("#### ✨ Tashkeel Text (Hover for Tooltip)")
-            with col_htts:
-                render_arabic_tts(tashkeel, tts_engine_choice, key_suffix=f"hist_{entry_id}")
-
             st.markdown(f"""
-            <div dir="rtl" class="arabic-text arabic-large" style="padding: 12px; border: 2px solid #4CAF50; border-radius: 8px; color: #2E7D32; background-color: rgba(76, 175, 80, 0.05); margin-bottom: 12px; text-align: right;">
+            <div dir="rtl" class="arabic-text" style="font-size: 24px !important; font-weight: normal !important; border: none !important; background: transparent !important; padding: 4px 0 !important; color: inherit !important; text-align: right !important; line-height: 1.8 !important; margin-bottom: 12px;">
                  {interactive_saved_tashkeel}
             </div>
             """, unsafe_allow_html=True)
