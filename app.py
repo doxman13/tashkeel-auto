@@ -1091,8 +1091,8 @@ st.html("""
         section.main .block-container,
         div[data-testid="stAppViewBlockContainer"] {
             max-width: 900px !important;
-            padding-left: 40rem !important;
-            padding-right: 40rem !important;
+            padding-left: 4rem !important;
+            padding-right: 4rem !important;
             margin-left: auto !important;
             margin-right: auto !important;
         }
