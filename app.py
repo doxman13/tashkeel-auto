@@ -1132,21 +1132,6 @@ st.html("""
             }
         }
 
-        /* Tablet overrides for saved history inspector */
-        @media (max-width: 1024px) {
-            .saved-inspector [data-testid="column"],
-            .saved-inspector [data-testid="stColumn"] {
-                width: 100% !important;
-                flex: 0 0 100% !important;
-                max-width: 100% !important;
-                min-width: 100% !important;
-                position: static !important;
-                top: auto !important;
-                max-height: none !important;
-                overflow: visible !important;
-            }
-        }
-
         .tashkeeled {
             background-color: rgba(240,94,86, 0.15) !important;
             border-radius: 12px;
@@ -2417,21 +2402,16 @@ elif nav_page == "📚 Saved History & Anki Export":
         with col_htts:
                 render_arabic_tts(tashkeel, tts_engine_choice, key_suffix=f"hist_{entry_id}")
 
-        st.markdown('<div class="saved-inspector">', unsafe_allow_html=True)
-
-        col_img, col_details = st.columns([2, 2])
-
-        with col_img:
-            st.markdown("#### ✨ Captured Image/pdf")
-            if img_b64:
-                try:
-                    img_bytes = base64.b64decode(img_b64)
-                    saved_pil_img = Image.open(io.BytesIO(img_bytes))
-                    st.image(saved_pil_img, caption=f"Saved Crop ({fname})", use_container_width=True)
-                except Exception as e:
-                    st.warning(f"Could not load image: {e}")
-            else:
-                st.caption("No image data stored.")
+        st.markdown("#### ✨ Captured Image/pdf")
+        if img_b64:
+            try:
+                img_bytes = base64.b64decode(img_b64)
+                saved_pil_img = Image.open(io.BytesIO(img_bytes))
+                st.image(saved_pil_img, caption=f"Saved Crop ({fname})", use_container_width=True)
+            except Exception as e:
+                st.warning(f"Could not load image: {e}")
+        else:
+            st.caption("No image data stored.")
                 
         # Parse saved JSON fields early
         try:
@@ -2455,32 +2435,27 @@ elif nav_page == "📚 Saved History & Anki Export":
         saved_word_map = build_word_meaning_map(saved_verbs, saved_nouns, saved_particles)
         saved_tokens = [w.strip() for w in re.split(r'[\s،؛؟\.\!\:\-"\']+', tashkeel) if w.strip()]
 
-        with col_details:
-            col_hlbl, col_htog = st.columns([4, 1])
-            with col_hlbl:
-                st.markdown("#### ✨ Tashkeel Text")
-            with col_htog:
-                show_saved_vowels = st.toggle("Show Vowels", value=True, key=f"hist_vowel_toggle_{entry_id}")
+        st.markdown("#### ✨ Tashkeel Text")
+        show_saved_vowels = st.toggle("Show Vowels", value=True, key=f"hist_vowel_toggle_{entry_id}")
 
-            v_html, nv_html, _ = build_interactive_tashkeel_html(
-                tashkeel,
-                verbs_str or "",
-                nouns_str or "",
-                particles_str or "",
-            )
-            interactive_saved_tashkeel = v_html if show_saved_vowels else nv_html
+        v_html, nv_html, _ = build_interactive_tashkeel_html(
+            tashkeel,
+            verbs_str or "",
+            nouns_str or "",
+            particles_str or "",
+        )
+        interactive_saved_tashkeel = v_html if show_saved_vowels else nv_html
 
-            st.markdown(f"""
-            <div dir="rtl" class="arabic-text tashkeeled">
-            {interactive_saved_tashkeel}
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if translation:
-                st.info(f"💡 **English Translation:** {translation}")
-            else:
-                st.caption("No translation recorded.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div dir="rtl" class="arabic-text tashkeeled">
+        {interactive_saved_tashkeel}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if translation:
+            st.info(f"💡 **English Translation:** {translation}")
+        else:
+            st.caption("No translation recorded.")
 
         # Interactive Word Lookup Reader for Saved Entry
         st.markdown("#### 👆 Interactive Word Lookup (Click Word to Inspect)")
