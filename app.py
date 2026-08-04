@@ -895,7 +895,7 @@ def translate_words(words_list: list) -> list:
 
 
 # Page config
-st.set_page_config(layout="wide", page_title="Arabic Diacritizer & Analyzer", page_icon=":material/translate:")
+st.set_page_config(layout="centered", page_title="Arabic Diacritizer & Analyzer", page_icon=":material/translate:")
 
 # Hero banner
 st.html("""
