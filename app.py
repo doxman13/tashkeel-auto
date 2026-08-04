@@ -508,7 +508,7 @@ def render_arabic_tts(text: str, engine_choice: str, key_suffix: str = "main"):
         return
 
     if "Microsoft Edge" in engine_choice:
-        if st.button(f"🔊 Play Full Sentence (Edge Neural)", key=f"btn_tts_edge_{key_suffix}"):
+        if st.button(f"🔊 Play (Edge Neural)", key=f"btn_tts_edge_{key_suffix}"):
             with st.spinner("Generating lifelike Edge Neural audio..."):
                 try:
                     audio_bytes = generate_edge_audio(text)
@@ -516,7 +516,7 @@ def render_arabic_tts(text: str, engine_choice: str, key_suffix: str = "main"):
                 except Exception as e:
                     st.error(f"Edge TTS error: {e}")
     elif "Google Voice" in engine_choice:
-        if st.button(f"🔊 Play Full Sentence (gTTS)", key=f"btn_tts_gtts_{key_suffix}"):
+        if st.button(f"🔊 Play (gTTS)", key=f"btn_tts_gtts_{key_suffix}"):
             with st.spinner("Generating Google Voice audio..."):
                 try:
                     audio_bytes = generate_gtts_audio(text)
@@ -1132,21 +1132,6 @@ st.html("""
             }
         }
 
-        /* Light clean background for specific main-content container */
-        .tashkeeled {
-            background: antiquewhite;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 12px;
-            color: #1a1a1a;
-        }
-
-        @media (prefers-color-scheme: dark) {
-            .tashkeeled {
-                background: #2b2b2b;
-                color: #e0e0e0;
-            }
-        }
 
         /* Hover highlight for interactive tashkeel words */
         .tashkeel-word {
@@ -1708,7 +1693,9 @@ if nav_page == "📖 Diacritizer & Analyzer":
                     with col_thdr:
                         st.markdown("#### ✨ Tashkeel Text (Hover for Tooltip)")
                     with col_ttog:
-                        st.markdown('<div style="display: flex; align-items: end; justify-content: end; height: 100%;">', unsafe_allow_html=True)
+                        st.markdown("""
+                        <div class="showvowels">
+                        """, unsafe_allow_html=True)
                         show_vowels = st.toggle("Show Vowels", value=True, key="main_vowel_toggle")
                         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -2396,7 +2383,7 @@ elif nav_page == "📚 Saved History & Anki Export":
         # 3. Full Entry Inspector View Below
         selected_row = entry_map[selected_option]
         entry_id, timestamp, fname, img_b64, tashkeel, translation, verbs_str, nouns_str, particles_str, deep_sarf_str = selected_row
-        
+
         col_hdr, col_del, col_htts = st.columns([4, 1, 1])
         with col_hdr:
             st.markdown(f"### Inspector View: Entry #{entry_id} (`{fname}` — *{timestamp}*)")
@@ -2409,13 +2396,21 @@ elif nav_page == "📚 Saved History & Anki Export":
                 render_arabic_tts(tashkeel, tts_engine_choice, key_suffix=f"hist_{entry_id}")
 
         col_img, col_details = st.columns([2, 2])
-        
+
         with col_img:
+            col_imgsub = st.columns(1)
+            with col_imgsub[0]:
+                st.markdown("#### ✨ Captured Image/pdf")
             if img_b64:
                 try:
                     img_bytes = base64.b64decode(img_b64)
                     saved_pil_img = Image.open(io.BytesIO(img_bytes))
+                    
+                    # Add top padding wrapper around the image
+                    st.markdown('<div>', unsafe_allow_html=True)
                     st.image(saved_pil_img, caption=f"Saved Crop ({fname})", use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    
                 except Exception as e:
                     st.warning(f"Could not load image: {e}")
             else:
@@ -2448,9 +2443,7 @@ elif nav_page == "📚 Saved History & Anki Export":
             with col_hlbl:
                 st.markdown("#### ✨ Tashkeel Text")
             with col_htog:
-                st.markdown('<div style="display: flex; width: 100%; height: 100%;">', unsafe_allow_html=True)
                 show_saved_vowels = st.toggle("Show Vowels", value=True, key=f"hist_vowel_toggle_{entry_id}")
-                st.markdown("</div>", unsafe_allow_html=True)
 
             v_html, nv_html, _ = build_interactive_tashkeel_html(
                 tashkeel,
@@ -2460,6 +2453,19 @@ elif nav_page == "📚 Saved History & Anki Export":
             )
             interactive_saved_tashkeel = v_html if show_saved_vowels else nv_html
 
+            st.markdown("""
+            <style>
+            /* Default / Light Mode */
+            .tashkeeled {
+                background-color: rgba(240,94,86, 0.15) !important;
+                border-radius: 12px;
+                padding: 28px;
+                margin-bottom: 12px;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+
+            # Render your element
             st.markdown(f"""
             <div dir="rtl" class="arabic-text tashkeeled">
             {interactive_saved_tashkeel}

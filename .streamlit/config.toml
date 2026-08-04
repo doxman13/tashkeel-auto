@@ -1,0 +1,63 @@
+# Manga Arabic Diacritizer — Theme Configuration
+
+[theme.dark]
+primaryColor = "#6366f1"
+backgroundColor = "#0f0f12"
+secondaryBackgroundColor = "#18181b"
+codeBackgroundColor = "#1c1c22"
+textColor = "#e4e4e7"
+linkColor = "#818cf8"
+borderColor = "#3f3f46"
+showWidgetBorder = false
+showSidebarBorder = true
+baseRadius = "8px"
+buttonRadius = "8px"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+codeFontSize = "0.85rem"
+codeTextColor = "#a1a1aa"
+baseFontSize = 14
+baseFontWeight = 400
+headingFontSizes = ["32px", "24px", "20px", "16px", "14px", "12px"]
+headingFontWeights = [700, 600, 600, 600, 500, 500]
+linkUnderline = false
+
+[theme.dark.sidebar]
+backgroundColor = "#09090b"
+secondaryBackgroundColor = "#111113"
+codeBackgroundColor = "#18181b"
+textColor = "#d4d4d8"
+borderColor = "#27272a"
+primaryColor = "#6366f1"
+
+[theme.light]
+primaryColor = "#4f46e5"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f5f7"
+codeBackgroundColor = "#f0f0f5"
+textColor = "#111118"
+linkColor = "#4f46e5"
+borderColor = "#d1d1db"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "8px"
+buttonRadius = "8px"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+codeFontSize = "0.85rem"
+codeTextColor = "#3f3f46"
+baseFontSize = 14
+baseFontWeight = 400
+headingFontSizes = ["32px", "24px", "20px", "16px", "14px", "12px"]
+headingFontWeights = [700, 600, 600, 600, 500, 500]
+linkUnderline = false
+
+[theme.light.sidebar]
+backgroundColor = "#f0f0f5"
+secondaryBackgroundColor = "#e8e8f0"
+codeBackgroundColor = "#e4e4ec"
+textColor = "#111118"
+borderColor = "#d1d1db"
+primaryColor = "#4f46e5"
