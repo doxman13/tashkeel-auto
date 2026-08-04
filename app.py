@@ -1089,11 +1089,10 @@ st.html("""
 
         /* Centered 1280px Main Container */
         section.main .block-container,
-        div[data-testid="stAppViewBlockContainer"],
-        .stMainBlockContainer {
-            max-width: 950px !important;
-            padding-left: 5rem !important;
-            padding-right: 5rem !important;
+        div[data-testid="stAppViewBlockContainer"] {
+            max-width: 900px !important;
+            padding-left: 200rem !important;
+            padding-right: 200rem !important;
             margin-left: auto !important;
             margin-right: auto !important;
         }
@@ -2369,14 +2368,12 @@ elif nav_page == "📚 Saved History & Anki Export":
                 "Particles": len(p_list)
             })
 
-        col_df, col_anki = st.columns([3, 1])
-        with col_df:
-            df_history = pd.DataFrame(history_data)
-            st.dataframe(df_history, use_container_width=True)
+        col_title, col_anki = st.columns([3, 1])
+        with col_title:
+            st.markdown("### 📊 History & Anki Export")
         with col_anki:
             df_anki = pd.DataFrame(anki_rows)
             csv_buffer = df_anki.to_csv(index=False).encode('utf-8')
-            st.write("")
             st.download_button(
                 label="📥 Download Anki CSV",
                 data=csv_buffer,
@@ -2385,6 +2382,9 @@ elif nav_page == "📚 Saved History & Anki Export":
                 key="download_anki_csv",
                 use_container_width=True
             )
+
+        df_history = pd.DataFrame(history_data)
+        st.dataframe(df_history, use_container_width=True)
 
         st.markdown("---")
 
