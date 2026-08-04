@@ -1097,11 +1097,6 @@ st.html("""
             margin-right: auto !important;
         }
 
-        /* Force wider container overriding Streamlit's emotion cache */
-        .st-emotion-cache-1w723zb {
-            max-width: 1200px !important;
-        }
-
         /* Sticky Left Column on Desktop Web View */
         @media (min-width: 769px) {
             div[data-testid="stColumn"]:nth-of-type(1),
