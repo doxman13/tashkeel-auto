@@ -1091,8 +1091,8 @@ st.html("""
         section.main .block-container,
         div[data-testid="stAppViewBlockContainer"] {
             max-width: 1280px !important;
-            padding-left: 3.5rem !important;
-            padding-right: 3.5rem !important;
+            padding-left: 7rem !important;
+            padding-right: 7rem !important;
             margin-left: auto !important;
             margin-right: auto !important;
         }
@@ -1127,8 +1127,8 @@ st.html("""
             .app-hero-title { font-size: 18px; }
             section.main .block-container,
             div[data-testid="stAppViewBlockContainer"] {
-                padding-left: 1.5rem !important;
-                padding-right: 1.5rem !important;
+                padding-left: 2.5rem !important;
+                padding-right: 2.5rem !important;
             }
         }
 
