@@ -1134,15 +1134,16 @@ st.html("""
 
         /* Tablet overrides for saved history inspector */
         @media (max-width: 1024px) {
-            .saved-inspector div[data-testid="stHorizontalBlock"] {
-                flex-wrap: wrap !important;
-            }
-            .saved-inspector div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
-            .saved-inspector div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+            .saved-inspector [data-testid="column"],
+            .saved-inspector [data-testid="stColumn"] {
                 width: 100% !important;
                 flex: 0 0 100% !important;
                 max-width: 100% !important;
                 min-width: 100% !important;
+                position: static !important;
+                top: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
             }
         }
 
