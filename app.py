@@ -2395,6 +2395,7 @@ elif nav_page == "📚 Saved History & Anki Export":
         with col_htts:
                 render_arabic_tts(tashkeel, tts_engine_choice, key_suffix=f"hist_{entry_id}")
 
+        st.markdown('<div class="saved-inspector">', unsafe_allow_html=True)
         col_img, col_details = st.columns([2, 2])
 
         with col_img:
@@ -2462,6 +2463,14 @@ elif nav_page == "📚 Saved History & Anki Export":
                 padding: 28px;
                 margin-bottom: 12px;
             }
+
+            @media (max-width: 1024px) {
+                .saved-inspector [data-testid="column"] {
+                    width: 100% !important;
+                    flex: 0 0 100% !important;
+                    max-width: 100% !important;
+                }
+            }
             </style>
             """, unsafe_allow_html=True)
 
@@ -2476,6 +2485,7 @@ elif nav_page == "📚 Saved History & Anki Export":
                 st.info(f"💡 **English Translation:** {translation}")
             else:
                 st.caption("No translation recorded.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
         # Interactive Word Lookup Reader for Saved Entry
         st.markdown("#### 👆 Interactive Word Lookup (Click Word to Inspect)")
