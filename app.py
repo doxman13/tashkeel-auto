@@ -1089,7 +1089,8 @@ st.html("""
 
         /* Centered 1280px Main Container */
         section.main .block-container,
-        div[data-testid="stAppViewBlockContainer"] {
+        div[data-testid="stAppViewBlockContainer"],
+        .stMainBlockContainer {
             max-width: 1200px !important;
             padding-left: 4rem !important;
             padding-right: 4rem !important;
