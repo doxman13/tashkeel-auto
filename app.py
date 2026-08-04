@@ -1132,6 +1132,27 @@ st.html("""
             }
         }
 
+        /* Tablet overrides for saved history inspector */
+        @media (max-width: 1024px) {
+            .saved-inspector div[data-testid="stHorizontalBlock"] {
+                flex-wrap: wrap !important;
+            }
+            .saved-inspector div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+            .saved-inspector div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+                width: 100% !important;
+                flex: 0 0 100% !important;
+                max-width: 100% !important;
+                min-width: 100% !important;
+            }
+        }
+
+        .tashkeeled {
+            background-color: rgba(240,94,86, 0.15) !important;
+            border-radius: 12px;
+            padding: 28px;
+            margin-bottom: 12px;
+        }
+
 
         /* Hover highlight for interactive tashkeel words */
         .tashkeel-word {
@@ -2396,29 +2417,6 @@ elif nav_page == "📚 Saved History & Anki Export":
                 render_arabic_tts(tashkeel, tts_engine_choice, key_suffix=f"hist_{entry_id}")
 
         st.markdown('<div class="saved-inspector">', unsafe_allow_html=True)
-
-        st.markdown("""
-        <style>
-        @media (max-width: 1024px) {
-            .saved-inspector [data-testid="stHorizontalBlock"] {
-                flex-wrap: wrap !important;
-            }
-            .saved-inspector [data-testid="stHorizontalBlock"] > [data-testid="column"],
-            .saved-inspector [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
-                width: 100% !important;
-                flex: 0 0 100% !important;
-                max-width: 100% !important;
-                min-width: 100% !important;
-            }
-        }
-        .tashkeeled {
-            background-color: rgba(240,94,86, 0.15) !important;
-            border-radius: 12px;
-            padding: 28px;
-            margin-bottom: 12px;
-        }
-        </style>
-        """, unsafe_allow_html=True)
 
         col_img, col_details = st.columns([2, 2])
 
