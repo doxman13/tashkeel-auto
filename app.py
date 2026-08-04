@@ -1090,9 +1090,9 @@ st.html("""
         /* Centered 1280px Main Container */
         section.main .block-container,
         div[data-testid="stAppViewBlockContainer"] {
-            max-width: 1280px !important;
-            padding-left: 7rem !important;
-            padding-right: 7rem !important;
+            max-width: 900px !important;
+            padding-left: 10rem !important;
+            padding-right: 10rem !important;
             margin-left: auto !important;
             margin-right: auto !important;
         }
@@ -1127,8 +1127,8 @@ st.html("""
             .app-hero-title { font-size: 18px; }
             section.main .block-container,
             div[data-testid="stAppViewBlockContainer"] {
-                padding-left: 2.5rem !important;
-                padding-right: 2.5rem !important;
+                padding-left: 3rem !important;
+                padding-right: 3rem !important;
             }
         }
 
