@@ -895,22 +895,11 @@ def translate_words(words_list: list) -> list:
 
 
 # Page config
-st.set_page_config(layout="centered", page_title="Arabic Diacritizer & Analyzer", page_icon=":material/translate:")
+st.set_page_config(layout="wide", page_title="Arabic Diacritizer & Analyzer", page_icon=":material/translate:")
 
-# Hero banner
-st.html("""
-<div class="app-hero">
-    <div class="app-hero-icon">📖</div>
-    <div>
-        <p class="app-hero-title">Arabic Diacritizer & Analyzer</p>
-        <p class="app-hero-sub">Upload manga pages or PDFs, crop speech bubbles, extract & diacritize Arabic text, and study grammar in depth.</p>
-    </div>
-</div>
-""")
-
-# Inject WebFont definitions for KFGQPC Uthman Taha Naskh & HAFS and custom CSS for Arabic rendering
-st.html("""
-    <link rel="preconnect" href="https://fonts.googleapis.com">
+# 2. Inject global container max-width using st.markdown
+st.markdown("""
+ <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet">
     <style>
@@ -1087,16 +1076,6 @@ st.html("""
             margin-bottom: 10px;
         }
 
-        /* Centered 1280px Main Container */
-        section.main .block-container,
-        div[data-testid="stAppViewBlockContainer"] {
-            max-width: 1100px !important;
-            padding-left: 5rem !important;
-            padding-right: 5rem !important;
-            margin-left: auto !important;
-            margin-right: auto !important;
-        }
-
         /* Sticky Left Column on Desktop Web View */
         @media (min-width: 769px) {
             div[data-testid="stColumn"]:nth-of-type(1),
@@ -1132,11 +1111,25 @@ st.html("""
             }
         }
 
-        .tashkeeled {
+        /*.tashkeeled {
             background-color: rgba(240,94,86, 0.15) !important;
             border-radius: 12px;
-            padding: 28px;
+            padding: 24px;
             margin-bottom: 12px;
+            font-weight: bold;
+        }*/
+
+        /* Dynamic Theme-Aware Tashkeeled Container */
+        .tashkeeled {
+            background-color: var(--secondary-background-color) !important;
+            color: var(--text-color) !important;
+            border: 1px solid rgba(128, 128, 128, 0.15) !important;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 12px;
+            font-weight: bold;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+            transition: background-color 0.2s ease, color 0.2s ease;
         }
 
 
@@ -1149,7 +1142,51 @@ st.html("""
             background-color: rgba(33, 150, 243, 0.15);
             border-radius: 4px;
         }
+
+        div[data-testid="stMainBlockContainer"],
+        .stMainBlockContainer,
+        .block-container {
+            max-width: 1000px !important;
+            padding-left: 5rem !important;
+            padding-right: 5rem !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        }
+
+        /* 1. Target the right column containing the toggle */
+        div[data-testid="stColumn"]:has(div[data-testid="stCheckbox"]) {
+            display: flex !important;
+            justify-content: flex-end !important;
+            align-items: center !important;
+        }
+
+        /* 2. Expand the toggle container and force its contents flush right */
+        div[data-testid="stCheckbox"] {
+            width: 100% !important;
+            display: flex !important;
+            justify-content: flex-end !important;
+        }
+
+        /* 3. Push the label wrapper flush against the right margin */
+        div[data-testid="stCheckbox"] > label {
+            margin-left: auto !important;
+            margin-right: 0 !important;
+            display: flex !important;
+            justify-content: flex-end !important;
+        }
+
     </style>
+    """, unsafe_allow_html=True)
+
+# Hero banner
+st.html("""
+<div class="app-hero">
+    <div class="app-hero-icon">📖</div>
+    <div>
+        <p class="app-hero-title">Arabic Diacritizer & Analyzer</p>
+        <p class="app-hero-sub">Upload manga pages or PDFs, crop speech bubbles, extract & diacritize Arabic text, and study grammar in depth.</p>
+    </div>
+</div>
 """)
 
 # Cache the OCR reader to avoid reloading on every interaction
@@ -2394,7 +2431,7 @@ elif nav_page == "📚 Saved History & Anki Export":
 
         col_hdr, col_del, col_htts = st.columns([4, 1, 1])
         with col_hdr:
-            st.markdown(f"### Inspector View: Entry #{entry_id} (`{fname}` — *{timestamp}*)")
+            st.markdown(f"### Inspector View: Entry #{entry_id}")
         with col_del:
             if st.button("🗑️ Delete Entry", key=f"btn_del_{entry_id}", use_container_width=True):
                 delete_study_entry(entry_id)
@@ -2436,8 +2473,14 @@ elif nav_page == "📚 Saved History & Anki Export":
         saved_word_map = build_word_meaning_map(saved_verbs, saved_nouns, saved_particles)
         saved_tokens = [w.strip() for w in re.split(r'[\s،؛؟\.\!\:\-"\']+', tashkeel) if w.strip()]
 
-        st.markdown("#### ✨ Tashkeel Text")
-        show_saved_vowels = st.toggle("Show Vowels", value=True, key=f"hist_vowel_toggle_{entry_id}")
+        # 2. Layout columns with vertical centering
+        col_title, col_toggle = st.columns([3, 1], vertical_alignment="center")
+
+        with col_title:
+            st.markdown("<h4 style='margin: 0;'>✨ Tashkeel Text</h4>", unsafe_allow_html=True)
+
+        with col_toggle:
+            show_saved_vowels = st.toggle("Show Vowels", value=True, key=f"hist_vowel_toggle_{entry_id}")
 
         v_html, nv_html, _ = build_interactive_tashkeel_html(
             tashkeel,
