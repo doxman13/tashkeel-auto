@@ -2491,10 +2491,47 @@ elif nav_page == "📚 Saved History & Anki Export":
         interactive_saved_tashkeel = v_html if show_saved_vowels else nv_html
 
         st.markdown(f"""
-        <div dir="rtl" class="arabic-text tashkeeled">
+        <div dir="rtl" class="arabic-text tashkeeled" id="tashkeel-container-{entry_id}">
         {interactive_saved_tashkeel}
         </div>
         """, unsafe_allow_html=True)
+        
+        click_word = components.html(f"""
+        <script>
+        (function() {{
+            const parentDoc = window.parent.document;
+            const container = parentDoc.getElementById('tashkeel-container-{entry_id}');
+            if (!container) return;
+
+            container.addEventListener('click', function(e) {{
+                const span = e.target.closest('.tashkeel-word');
+                if (!span) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const text = span.textContent || span.innerText;
+                const tipText = span.getAttribute('title') || '';
+                
+                let tip = parentDoc.getElementById('custom-tashkeel-tooltip-{entry_id}');
+                if (!tip) {{
+                    tip = parentDoc.createElement('div');
+                    tip.id = 'custom-tashkeel-tooltip-{entry_id}';
+                    tip.style.cssText = 'position:absolute;background:#333;color:white;padding:6px 10px;border-radius:4px;font-size:13px;z-index:9999;pointer-events:none;white-space:normal;max-width:250px;word-wrap:break-word;display:none;';
+                    parentDoc.body.appendChild(tip);
+                }}
+                tip.textContent = tipText;
+                tip.style.display = 'block';
+                const rect = span.getBoundingClientRect();
+                tip.style.left = (rect.left + window.parent.scrollX) + 'px';
+                tip.style.top = (rect.top + window.parent.scrollY - tip.offsetHeight - 8) + 'px';
+                setTimeout(() => {{ tip.style.display = 'none'; }}, 3000);
+                
+                if (window.parent.Streamlit) {{
+                    window.parent.Streamlit.setComponentValue(text);
+                }}
+            }});
+        }})();
+        </script>
+        """, height=0)
         
         if translation:
             st.info(f"💡 **English Translation:** {translation}")
@@ -2503,11 +2540,22 @@ elif nav_page == "📚 Saved History & Anki Export":
 
         # Interactive Word Lookup Reader for Saved Entry
         st.markdown("#### 👆 Interactive Word Lookup (Click Word to Inspect)")
+        
+        pills_key = f"hist_word_pills_{entry_id}"
+        counter_key = f"hist_word_click_counter_{entry_id}"
+        
+        if click_word and isinstance(click_word, str) and click_word.strip():
+            new_word = click_word.strip()
+            new_counter = st.session_state.get(counter_key, 0) + 1
+            st.session_state[counter_key] = new_counter
+            st.session_state[pills_key] = new_word
+            st.rerun()
+
         selected_hist_word = st.pills(
             "Select a word from this saved entry:",
             options=saved_tokens,
             selection_mode="single",
-            key=f"hist_word_pills_{entry_id}"
+            key=pills_key
         )
 
         if selected_hist_word:
