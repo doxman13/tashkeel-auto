@@ -1147,8 +1147,8 @@ st.markdown("""
         .stMainBlockContainer,
         .block-container {
             max-width: 1000px !important;
-            padding-left: 5rem !important;
-            padding-right: 5rem !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
             margin-left: auto !important;
             margin-right: auto !important;
         }
