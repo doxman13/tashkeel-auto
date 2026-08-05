@@ -439,8 +439,8 @@ def build_interactive_tashkeel_html(diacritized_text: str, verbs_json: str, noun
             tooltip_txt = f"Unclassified Word | Meaning: {unclass_trans}"
 
         safe_tooltip = _escape_html_attr(tooltip_txt)
-        vowel_spans.append(f'<span class="tashkeel-word" title="{safe_tooltip}" data-tooltip="{safe_tooltip}" role="button" tabindex="0">{token}</span>')
-        novowel_spans.append(f'<span class="tashkeel-word" title="{safe_tooltip}" data-tooltip="{safe_tooltip}" role="button" tabindex="0">{raw_token}</span>')
+        vowel_spans.append(f'<span class="tashkeel-word" data-tooltip="{safe_tooltip}" role="button" tabindex="0">{token}</span>')
+        novowel_spans.append(f'<span class="tashkeel-word" data-tooltip="{safe_tooltip}" role="button" tabindex="0">{raw_token}</span>')
 
     return " ".join(vowel_spans), " ".join(novowel_spans), sentence_tokens
 
@@ -503,79 +503,73 @@ def generate_gtts_audio(text: str) -> bytes:
     return fp.getvalue()
 
 def render_arabic_tts(text: str, engine_choice: str, key_suffix: str = "main"):
-    """Render audio controls for the provided Arabic text based on chosen engine."""
+    """Render a centered audio player right below the Tashkeel text box."""
     if not text or not text.strip():
         return
 
+    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+
     if "Microsoft Edge" in engine_choice:
-        if st.button(f"🔊 Play (Edge Neural)", key=f"btn_tts_edge_{key_suffix}"):
-            with st.spinner("Generating lifelike Edge Neural audio..."):
-                try:
-                    audio_bytes = generate_edge_audio(text)
-                    st.audio(audio_bytes, format="audio/mp3", autoplay=True)
-                except Exception as e:
-                    st.error(f"Edge TTS error: {e}")
+        col_d1, col_play, col_d2 = st.columns([1, 2, 1])
+        with col_play:
+            if st.button("🔊 Play Audio (Edge Neural)", key=f"btn_tts_{key_suffix}", use_container_width=True):
+                with st.spinner("Generating lifelike Edge Neural audio..."):
+                    try:
+                        audio_bytes = generate_edge_audio(text)
+                        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+                    except Exception as e:
+                        st.error(f"Edge TTS error: {e}")
     elif "Google Voice" in engine_choice:
-        if st.button(f"🔊 Play (gTTS)", key=f"btn_tts_gtts_{key_suffix}"):
-            with st.spinner("Generating Google Voice audio..."):
-                try:
-                    audio_bytes = generate_gtts_audio(text)
-                    st.audio(audio_bytes, format="audio/mp3", autoplay=True)
-                except Exception as e:
-                    st.error(f"gTTS error: {e}")
+        col_d1, col_play, col_d2 = st.columns([1, 2, 1])
+        with col_play:
+            if st.button("🔊 Play Audio (gTTS)", key=f"btn_tts_{key_suffix}", use_container_width=True):
+                with st.spinner("Generating Google Voice audio..."):
+                    try:
+                        audio_bytes = generate_gtts_audio(text)
+                        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+                    except Exception as e:
+                        st.error(f"gTTS error: {e}")
     else:
-        # Browser Native Web Speech API with Chrome Voice Resolution
         escaped_txt = text.replace('"', '\\"').replace("'", "\\'").replace('\n', ' ')
-        html_code = f"""
-        <div style="margin-top: 5px;">
-            <button onclick="speakText()" style="
-                background-color: #1E88E5; 
-                color: white; 
+        components.html(f"""
+        <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
+            <button onclick="speakText()" title="Play Audio" style="
+                background: linear-gradient(135deg, #1E88E5 0%, #1565C0 100%); 
+                color: #ffffff; 
                 border: none; 
-                padding: 8px 16px; 
-                border-radius: 6px; 
+                padding: 10px 24px; 
+                border-radius: 20px; 
                 font-size: 15px; 
-                cursor: pointer;
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;">
-                ⚡ 🔊 Listen via Browser (Instant)
+                font-weight: 600;
+                font-family: system-ui, -apple-system, sans-serif;
+                cursor: pointer; 
+                display: inline-flex; 
+                align-items: center; 
+                justify-content: center; 
+                gap: 8px;
+                box-shadow: 0 4px 12px rgba(21, 101, 192, 0.3);
+                transition: transform 0.15s ease, box-shadow 0.15s ease;"
+                onmouseover="this.style.transform='scale(1.03)'"
+                onmouseout="this.style.transform='scale(1.0)'">
+                🔊 Listen to Pronunciation
             </button>
         </div>
         <script>
-        let arVoice = null;
-        function loadVoices() {{
-            if ('speechSynthesis' in window) {{
-                const voices = window.speechSynthesis.getVoices();
-                arVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('ar'));
-            }}
-        }}
-        if ('speechSynthesis' in window) {{
-            loadVoices();
-            if (window.speechSynthesis.onvoiceschanged !== undefined) {{
-                window.speechSynthesis.onvoiceschanged = loadVoices;
-            }}
-        }}
         function speakText() {{
-            if ('speechSynthesis' in window) {{
-                window.speechSynthesis.cancel();
-                const msg = new SpeechSynthesisUtterance('{escaped_txt}');
+            const pWin = window.parent;
+            if ('speechSynthesis' in pWin) {{
+                pWin.speechSynthesis.cancel();
+                const msg = new pWin.SpeechSynthesisUtterance('{escaped_txt}');
                 msg.lang = 'ar-SA';
                 msg.rate = 0.85;
-                if (!arVoice) {{
-                    loadVoices();
-                }}
-                if (arVoice) {{
-                    msg.voice = arVoice;
-                }}
-                window.speechSynthesis.speak(msg);
-            }} else {{
-                alert('Browser Web Speech API not supported.');
+                let voices = pWin.speechSynthesis.getVoices();
+                let arVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('ar'));
+                if (arVoice) msg.voice = arVoice;
+                pWin.speechSynthesis.speak(msg);
             }}
         }}
         </script>
-        """
-        components.html(html_code, height=45)
+        """, height=50)
 
 # Pydantic Schemas for Master Gemini JSON Response
 class WordMeaningItem(BaseModel):
@@ -1106,8 +1100,8 @@ st.markdown("""
             .app-hero-title { font-size: 18px; }
             section.main .block-container,
             div[data-testid="stAppViewBlockContainer"] {
-                padding-left: 3rem !important;
-                padding-right: 3rem !important;
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
             }
         }
 
@@ -1174,26 +1168,65 @@ st.markdown("""
             margin-right: auto !important;
         }
 
-        /* 1. Target the right column containing the toggle */
-        div[data-testid="stColumn"]:has(div[data-testid="stCheckbox"]) {
+        /* Mobile-only layout override: prevent Tashkeel title & toggle from stacking vertically */
+        @media (max-width: 640px) {
+            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stToggle"]),
+            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stCheckbox"]) {
+                flex-direction: row !important;
+                flex-wrap: nowrap !important;
+                align-items: center !important;
+            }
+            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stToggle"]) > div[data-testid="stColumn"]:first-child,
+            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stCheckbox"]) > div[data-testid="stColumn"]:first-child {
+                flex: 3 1 0% !important;
+                width: 65% !important;
+                min-width: 0 !important;
+            }
+            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stToggle"]) > div[data-testid="stColumn"]:last-child,
+            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stCheckbox"]) > div[data-testid="stColumn"]:last-child {
+                flex: 1 1 0% !important;
+                width: 35% !important;
+                min-width: 0 !important;
+            }
+        }
+
+        /* Flush right alignment for toggle switch */
+        div[data-testid="stToggle"] {
+            margin-left: auto !important;
+            display: flex !important;
+            justify-content: flex-end !important;
+        }
+
+        div[data-testid="stToggle"] > label {
+            margin-left: auto !important;
+            margin-right: 0 !important;
             display: flex !important;
             justify-content: flex-end !important;
             align-items: center !important;
         }
 
+
+
         /* 2. Expand the toggle container and force its contents flush right */
-        div[data-testid="stCheckbox"] {
+        div[data-testid="stToggle"],
+        div[data-testid="stCheckbox"],
+        div[data-testid="stElementContainer"]:has(div[data-testid="stToggle"]),
+        div[data-testid="stElementContainer"]:has(div[data-testid="stCheckbox"]) {
             width: 100% !important;
             display: flex !important;
             justify-content: flex-end !important;
+            margin-left: auto !important;
         }
 
         /* 3. Push the label wrapper flush against the right margin */
-        div[data-testid="stCheckbox"] > label {
+        div[data-testid="stToggle"] > label,
+        div[data-testid="stCheckbox"] > label,
+        label[data-baseweb="checkbox"] {
             margin-left: auto !important;
             margin-right: 0 !important;
             display: flex !important;
             justify-content: flex-end !important;
+            align-items: center !important;
         }
 
     </style>
@@ -1320,7 +1353,8 @@ nav_page = st.sidebar.radio(
     "Go to page:",
     [
         "📖 Diacritizer & Analyzer",
-        "📚 Saved History & Anki Export",
+        "📚 Saved Entry Inspector",
+        "📊 History & Anki Export",
         "🔍 Combined Vocabulary",
         "🖼️ Saved Entry Gallery"
     ],
@@ -1708,16 +1742,14 @@ if nav_page == "📖 Diacritizer & Analyzer":
                 extracted_text = st.session_state.extracted_text
                 diacritized_text = st.session_state.diacritized_text
             
-                # Top Toolbar: Centered Action Buttons & TTS
-                col_m1, col_m2, col_tts = st.columns([2, 2, 3])
+                # Top Toolbar: Centered Action Buttons
+                col_m1, col_m2 = st.columns(2)
                 with col_m1:
                     if st.button("📄 Raw Text", key="btn_open_raw_modal", icon=":material/description:", use_container_width=True):
                         show_raw_text_modal()
                 with col_m2:
                     if st.button("✨ Diacritized Text", key="btn_open_diacritized_modal", icon=":material/edit_note:", use_container_width=True):
                         show_diacritized_text_modal()
-                with col_tts:
-                    render_arabic_tts(diacritized_text, tts_engine_choice, key_suffix="full_sentence")
 
                 st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
 
@@ -1736,14 +1768,11 @@ if nav_page == "📖 Diacritizer & Analyzer":
                     """, unsafe_allow_html=True)
 
                 with st.container(border=True):
-                    # Tashkeel Text Header & Vowel Toggle — toggle pinned to the right
-                    col_thdr, col_ttog = st.columns([3, 1])
+                    col_thdr, col_ttog = st.columns([2, 1], vertical_alignment="center")
                     with col_thdr:
-                        st.markdown("#### ✨ Tashkeel Text (Tap / Hover for Tooltip)")
+                        st.markdown("#### ✨ Tashkeel Text")
                     with col_ttog:
-                        st.markdown("<div style='display:flex;justify-content:flex-end;align-items:center;height:100%;'>", unsafe_allow_html=True)
-                        show_vowels = st.toggle("Show Vowels", value=True, key="main_vowel_toggle")
-                        st.markdown("</div>", unsafe_allow_html=True)
+                        show_vowels = st.toggle("Vowels", value=True, key="main_vowel_toggle")
 
                     v_html, nv_html, sentence_tokens = build_interactive_tashkeel_html(
                         diacritized_text,
@@ -1753,11 +1782,8 @@ if nav_page == "📖 Diacritizer & Analyzer":
                     )
                     interactive_tashkeel_html = v_html if show_vowels else nv_html
 
-                    st.markdown(f"""
-                    <div dir="rtl" class="arabic-text tashkeeled">
-                        {interactive_tashkeel_html}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f'<div dir="rtl" class="arabic-text tashkeeled">{interactive_tashkeel_html}</div>', unsafe_allow_html=True)
+                    render_arabic_tts(diacritized_text, tts_engine_choice, key_suffix="full_sentence")
 
                     st.components.v1.html("""
                     <script>
@@ -2419,8 +2445,8 @@ if nav_page == "📖 Diacritizer & Analyzer":
     else:
         st.info("Please upload one or more manga pages to begin.")
 
-elif nav_page == "📚 Saved History & Anki Export":
-    st.title("📚 Saved Study History & Anki Flashcard Exporter")
+elif nav_page == "📚 Saved Entry Inspector":
+    st.title("📚 Saved Entry Inspector")
     
     entries = get_all_study_entries()
     if entries:
@@ -2442,77 +2468,11 @@ elif nav_page == "📚 Saved History & Anki Export":
             key="sidebar_entry_radio"
         )
 
-
-        # 2. Main Area TOP: Summary Table & Anki Deck Export
-        st.subheader(f"Summary Table & Anki Deck Export ({len(entries)} Entries)")
-        
-        history_data = []
-        anki_rows = []
-        
-        for row in entries:
-            e_id, t_stamp, f_name, i_b64, t_text, f_trans, v_str, n_str, p_str, d_str = row
-            try:
-                v_list = json.loads(v_str) if v_str else []
-            except Exception:
-                v_list = []
-            try:
-                n_list = json.loads(n_str) if n_str else []
-            except Exception:
-                n_list = []
-            try:
-                p_list = json.loads(p_str) if p_str else []
-            except Exception:
-                p_list = []
-
-            verbs_formatted = ", ".join([f"{v.get('word','')} ({v.get('meaning','')})" if isinstance(v, dict) else str(v) for v in v_list])
-            nouns_formatted = ", ".join([f"{n.get('word','')} ({n.get('meaning','')})" if isinstance(n, dict) else str(n) for n in n_list])
-            particles_formatted = ", ".join([f"{p.get('word','') or p.get('particle','')} ({p.get('meaning','')})" if isinstance(p, dict) else str(p) for p in p_list])
-
-            back_card = f"{f_trans}\n\n[Verbs]: {verbs_formatted}\n[Nouns]: {nouns_formatted}\n[Particles]: {particles_formatted}"
-            
-            anki_rows.append({
-                "Front (Arabic)": t_text,
-                "Back (English)": back_card,
-                "Source File": f_name,
-                "Timestamp": t_stamp
-            })
-
-            history_data.append({
-                "ID": e_id,
-                "Timestamp": t_stamp,
-                "Source File": f_name,
-                "Arabic Text (Tashkeel)": t_text,
-                "Translation": f_trans,
-                "Verbs": len(v_list),
-                "Nouns": len(n_list),
-                "Particles": len(p_list)
-            })
-
-        col_title, col_anki = st.columns([3, 1])
-        with col_title:
-            st.markdown("### 📊 History & Anki Export")
-        with col_anki:
-            df_anki = pd.DataFrame(anki_rows)
-            csv_buffer = df_anki.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Anki CSV",
-                data=csv_buffer,
-                file_name="arabic_manga_anki_deck.csv",
-                mime="text/csv",
-                key="download_anki_csv",
-                use_container_width=True
-            )
-
-        df_history = pd.DataFrame(history_data)
-        st.dataframe(df_history, use_container_width=True)
-
-        st.markdown("---")
-
-        # 3. Full Entry Inspector View Below
+        # Full Entry Inspector View
         selected_row = entry_map[selected_option]
         entry_id, timestamp, fname, img_b64, tashkeel, translation, verbs_str, nouns_str, particles_str, deep_sarf_str = selected_row
 
-        col_hdr, col_del, col_htts = st.columns([4, 1, 1])
+        col_hdr, col_del = st.columns([4, 1])
         with col_hdr:
             st.markdown(f"### Inspector View: Entry #{entry_id}")
         with col_del:
@@ -2520,8 +2480,6 @@ elif nav_page == "📚 Saved History & Anki Export":
                 delete_study_entry(entry_id)
                 st.success(f"Deleted entry #{entry_id}!")
                 st.rerun()
-        with col_htts:
-                render_arabic_tts(tashkeel, tts_engine_choice, key_suffix=f"hist_{entry_id}")
 
         st.markdown("#### ✨ Captured Image/pdf")
         if img_b64:
@@ -2556,14 +2514,13 @@ elif nav_page == "📚 Saved History & Anki Export":
         saved_word_map = build_word_meaning_map(saved_verbs, saved_nouns, saved_particles)
         saved_tokens = [w.strip() for w in re.split(r'[\s،؛؟\.\!\:\-"\']+', tashkeel) if w.strip()]
 
-        # 2. Layout columns with vertical centering
-        col_title, col_toggle = st.columns([3, 1], vertical_alignment="center")
+        col_title, col_toggle = st.columns([2, 1], vertical_alignment="center")
 
         with col_title:
-            st.markdown("<h4 style='margin: 0;'>✨ Tashkeel Text (Tap / Hover for Tooltip)</h4>", unsafe_allow_html=True)
+            st.markdown("#### ✨ Tashkeel Text")
 
         with col_toggle:
-            show_saved_vowels = st.toggle("Show Vowels", value=True, key=f"hist_vowel_toggle_{entry_id}")
+            show_saved_vowels = st.toggle("Vowels", value=True, key=f"hist_vowel_toggle_{entry_id}")
 
         v_html, nv_html, _ = build_interactive_tashkeel_html(
             tashkeel,
@@ -2573,11 +2530,8 @@ elif nav_page == "📚 Saved History & Anki Export":
         )
         interactive_saved_tashkeel = v_html if show_saved_vowels else nv_html
 
-        st.markdown(f"""
-        <div dir="rtl" class="arabic-text tashkeeled" id="tashkeel-container-{entry_id}">
-        {interactive_saved_tashkeel}
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div dir="rtl" class="arabic-text tashkeeled" id="tashkeel-container-{entry_id}">{interactive_saved_tashkeel}</div>', unsafe_allow_html=True)
+        render_arabic_tts(tashkeel, tts_engine_choice, key_suffix=f"hist_{entry_id}")
 
         st.components.v1.html("""
         <script>
@@ -3178,9 +3132,75 @@ elif nav_page == "📚 Saved History & Anki Export":
                     st.json(saved_deep_sarf["verb_sarf"])
                 if saved_deep_sarf.get("noun_sarf"):
                     st.markdown(f"**Noun Sarf for '{saved_deep_sarf.get('last_noun', '')}':**")
-                    st.json(saved_deep_sarf["noun_sarf"])
     else:
         st.info("No entries saved in the database yet. Process a crop on the Diacritizer page and click '💾 Save Entry to Database'!")
+
+elif nav_page == "📊 History & Anki Export":
+    st.title("📊 History Table & Anki Export")
+
+    entries = get_all_study_entries()
+    if not entries:
+        st.info("No entries saved in the database yet. Process a crop on the 📖 Diacritizer & Analyzer page and save an entry.")
+    else:
+        history_data = []
+        anki_rows = []
+
+        for row in entries:
+            e_id, t_stamp, f_name, i_b64, t_text, f_trans, v_str, n_str, p_str, d_str = row
+            try:
+                v_list = json.loads(v_str) if v_str else []
+            except Exception:
+                v_list = []
+            try:
+                n_list = json.loads(n_str) if n_str else []
+            except Exception:
+                n_list = []
+            try:
+                p_list = json.loads(p_str) if p_str else []
+            except Exception:
+                p_list = []
+
+            verbs_formatted = ", ".join([f"{v.get('word','')} ({v.get('meaning','')})" if isinstance(v, dict) else str(v) for v in v_list])
+            nouns_formatted = ", ".join([f"{n.get('word','')} ({n.get('meaning','')})" if isinstance(n, dict) else str(n) for n in n_list])
+            particles_formatted = ", ".join([f"{p.get('word','') or p.get('particle','')} ({p.get('meaning','')})" if isinstance(p, dict) else str(p) for p in p_list])
+
+            back_card = f"{f_trans}\n\n[Verbs]: {verbs_formatted}\n[Nouns]: {nouns_formatted}\n[Particles]: {particles_formatted}"
+
+            anki_rows.append({
+                "Front (Arabic)": t_text,
+                "Back (English)": back_card,
+                "Source File": f_name,
+                "Timestamp": t_stamp
+            })
+
+            history_data.append({
+                "ID": e_id,
+                "Timestamp": t_stamp,
+                "Source File": f_name,
+                "Arabic Text (Tashkeel)": t_text,
+                "Translation": f_trans,
+                "Verbs": len(v_list),
+                "Nouns": len(n_list),
+                "Particles": len(p_list)
+            })
+
+        col_title, col_anki = st.columns([3, 1], vertical_alignment="center")
+        with col_title:
+            st.caption(f"Master overview of all **{len(entries)}** saved study entries.")
+        with col_anki:
+            df_anki = pd.DataFrame(anki_rows)
+            csv_buffer = df_anki.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Anki CSV",
+                data=csv_buffer,
+                file_name="arabic_manga_anki_deck.csv",
+                mime="text/csv",
+                key="download_anki_csv",
+                use_container_width=True
+            )
+
+        df_history = pd.DataFrame(history_data)
+        st.dataframe(df_history, use_container_width=True)
 elif nav_page == "🔍 Combined Vocabulary":
     st.title("🔍 Combined Vocabulary Across All Entries")
 
