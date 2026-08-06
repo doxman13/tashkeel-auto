@@ -439,8 +439,10 @@ def build_interactive_tashkeel_html(diacritized_text: str, verbs_json: str, noun
             tooltip_txt = f"Unclassified Word | Meaning: {unclass_trans}"
 
         safe_tooltip = _escape_html_attr(tooltip_txt)
-        vowel_spans.append(f'<span class="tashkeel-word" data-tooltip="{safe_tooltip}" role="button" tabindex="0">{token}</span>')
-        novowel_spans.append(f'<span class="tashkeel-word" data-tooltip="{safe_tooltip}" role="button" tabindex="0">{raw_token}</span>')
+        safe_token = _escape_html_attr(token) + "&#8203;"
+        safe_raw = _escape_html_attr(raw_token) + "&#8203;"
+        vowel_spans.append(f'<span class="tashkeel-word" data-tooltip="{safe_tooltip}" data-vowel="{safe_token}" data-novowel="{safe_raw}" role="button" tabindex="0">{token}</span>')
+        novowel_spans.append(f'<span class="tashkeel-word" data-tooltip="{safe_tooltip}" data-vowel="{safe_token}" data-novowel="{safe_raw}" role="button" tabindex="0">{raw_token}</span>')
 
     return " ".join(vowel_spans), " ".join(novowel_spans), sentence_tokens
 
@@ -1780,9 +1782,27 @@ if nav_page == "📖 Diacritizer & Analyzer":
                         json.dumps(st.session_state.nouns),
                         json.dumps(st.session_state.particles),
                     )
-                    interactive_tashkeel_html = v_html if show_vowels else nv_html
 
-                    st.markdown(f'<div dir="rtl" class="arabic-text tashkeeled">{interactive_tashkeel_html}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div dir="rtl" class="arabic-text tashkeeled" id="tashkeel-container-main">{v_html}</div>', unsafe_allow_html=True)
+
+                    st.components.v1.html(f"""
+                    <script>
+                    (function() {{
+                        var SHOW_VOWELS = {str(show_vowels).lower()};
+                        var container = window.parent.document.getElementById('tashkeel-container-main');
+                        if (!container) return;
+                        var spans = container.querySelectorAll('.tashkeel-word');
+                        for (var i = 0; i < spans.length; i++) {{
+                            var span = spans[i];
+                            span.textContent = span.getAttribute('data-vowel') || span.textContent;
+                            span.style.minWidth = span.getBoundingClientRect().width + 'px';
+                            if (!SHOW_VOWELS) {{
+                                span.textContent = span.getAttribute('data-novowel') || span.textContent;
+                            }}
+                        }}
+                    }})();
+                    </script>
+                    """, height=0)
                     render_arabic_tts(diacritized_text, tts_engine_choice, key_suffix="full_sentence")
 
                     st.components.v1.html("""
@@ -2514,7 +2534,7 @@ elif nav_page == "📚 Saved Entry Inspector":
         saved_word_map = build_word_meaning_map(saved_verbs, saved_nouns, saved_particles)
         saved_tokens = [w.strip() for w in re.split(r'[\s،؛؟\.\!\:\-"\']+', tashkeel) if w.strip()]
 
-        col_title, col_toggle = st.columns([2, 1], vertical_alignment="center")
+        col_title, col_toggle, col_copy = st.columns([2, 1, 2], vertical_alignment="center")
 
         with col_title:
             st.markdown("#### ✨ Tashkeel Text")
@@ -2522,15 +2542,132 @@ elif nav_page == "📚 Saved Entry Inspector":
         with col_toggle:
             show_saved_vowels = st.toggle("Vowels", value=True, key=f"hist_vowel_toggle_{entry_id}")
 
+        with col_copy:
+            copy_with_vowels = tashkeel.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'").replace("\n", " ").replace("\r", "")
+            copy_without_vowels = strip_tashkeel(tashkeel).replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'").replace("\n", " ").replace("\r", "")
+            components.html(f"""
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <button id="btn-copy-with-{entry_id}" title="Copy Arabic text with vowels" style="
+                    background: linear-gradient(135deg, #43A047 0%, #2E7D32 100%);
+                    color: #ffffff;
+                    border: none;
+                    padding: 6px 12px;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    font-family: system-ui, -apple-system, sans-serif;
+                    cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    box-shadow: 0 2px 6px rgba(46,125,50,0.25);
+                    transition: transform 0.15s ease;
+                " onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1.0)'">
+                    📋 Copy with Vowels
+                </button>
+                <button id="btn-copy-without-{entry_id}" title="Copy Arabic text without vowels" style="
+                    background: linear-gradient(135deg, #FB8C00 0%, #E65100 100%);
+                    color: #ffffff;
+                    border: none;
+                    padding: 6px 12px;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    font-family: system-ui, -apple-system, sans-serif;
+                    cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    box-shadow: 0 2px 6px rgba(230,81,0,0.25);
+                    transition: transform 0.15s ease;
+                " onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1.0)'">
+                    📋 Copy without Vowels
+                </button>
+            </div>
+            <script>
+            const COPY_TEXT_WITH_{entry_id} = "{copy_with_vowels}";
+            const COPY_TEXT_WITHOUT_{entry_id} = "{copy_without_vowels}";
+            (function() {{
+                var btnWith = document.getElementById('btn-copy-with-{entry_id}');
+                var btnWithout = document.getElementById('btn-copy-without-{entry_id}');
+                if (btnWith) {{
+                    btnWith.addEventListener('click', function() {{ copyText(COPY_TEXT_WITH_{entry_id}); }});
+                }}
+                if (btnWithout) {{
+                    btnWithout.addEventListener('click', function() {{ copyText(COPY_TEXT_WITHOUT_{entry_id}); }});
+                }}
+            }})();
+            function copyText(text) {{
+                var pWin = window.parent;
+                var pDoc = window.parent.document;
+                if (pWin.navigator && pWin.navigator.clipboard) {{
+                    pWin.navigator.clipboard.writeText(text).then(function() {{
+                        showToast('Copied!');
+                    }}).catch(function() {{
+                        fallbackCopy(text);
+                    }});
+                }} else {{
+                    fallbackCopy(text);
+                }}
+            }}
+            function fallbackCopy(text) {{
+                var textarea = pDoc.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                pDoc.body.appendChild(textarea);
+                textarea.select();
+                try {{ pDoc.execCommand('copy'); }} catch(e) {{}}
+                pDoc.body.removeChild(textarea);
+                showToast('Copied!');
+            }}
+            function showToast(msg) {{
+                var pWin = window.parent;
+                var pDoc = window.parent.document;
+                var toast = pDoc.getElementById('copy-toast');
+                if (!toast) {{
+                    toast = pDoc.createElement('div');
+                    toast.id = 'copy-toast';
+                    toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1E88E5;color:#fff;padding:8px 20px;border-radius:20px;font-size:14px;font-weight:600;font-family:system-ui,-apple-system,sans-serif;z-index:999999;box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.3s ease;';
+                    pDoc.body.appendChild(toast);
+                }}
+                toast.textContent = msg;
+                toast.style.opacity = '1';
+                pWin.clearTimeout(pWin._copyToastTimer);
+                pWin._copyToastTimer = pWin.setTimeout(function() {{
+                    toast.style.opacity = '0';
+                }}, 1500);
+            }}
+            </script>
+            """, height=40)
+
         v_html, nv_html, _ = build_interactive_tashkeel_html(
             tashkeel,
             verbs_str or "",
             nouns_str or "",
             particles_str or "",
         )
-        interactive_saved_tashkeel = v_html if show_saved_vowels else nv_html
 
-        st.markdown(f'<div dir="rtl" class="arabic-text tashkeeled" id="tashkeel-container-{entry_id}">{interactive_saved_tashkeel}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div dir="rtl" class="arabic-text tashkeeled" id="tashkeel-container-{entry_id}">{v_html}</div>', unsafe_allow_html=True)
+
+        st.components.v1.html(f"""
+        <script>
+        (function() {{
+            var SHOW_VOWELS = {str(show_saved_vowels).lower()};
+            var container = window.parent.document.getElementById('tashkeel-container-{entry_id}');
+            if (!container) return;
+            var spans = container.querySelectorAll('.tashkeel-word');
+            for (var i = 0; i < spans.length; i++) {{
+                var span = spans[i];
+                span.textContent = span.getAttribute('data-vowel') || span.textContent;
+                span.style.minWidth = span.getBoundingClientRect().width + 'px';
+                if (!SHOW_VOWELS) {{
+                    span.textContent = span.getAttribute('data-novowel') || span.textContent;
+                }}
+            }}
+        }})();
+        </script>
+        """, height=0)
         render_arabic_tts(tashkeel, tts_engine_choice, key_suffix=f"hist_{entry_id}")
 
         st.components.v1.html("""
