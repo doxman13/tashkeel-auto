@@ -1313,6 +1313,10 @@ if 'nouns' not in st.session_state:
     st.session_state.nouns = []
 if 'particles' not in st.session_state:
     st.session_state.particles = []
+if 'input_mode' not in st.session_state:
+    st.session_state.input_mode = "📁 Upload Image"
+if 'prev_input_mode' not in st.session_state:
+    st.session_state.prev_input_mode = "📁 Upload Image"
 
 def process_text_for_display(text):
     """Reshape and apply bidi algorithm for proper RTL display in Streamlit widgets."""
@@ -1393,88 +1397,65 @@ if nav_page == "📖 Diacritizer & Analyzer":
     else:
         st.sidebar.info("💡 **Tip:** Full Gemini Vision mode sends the image crop directly to Gemini, allowing it to perform OCR, Tashkeel, and word classification in a single step.")
 
-    # 1. File Upload Limit (max 10 files)
-    uploaded_files = st.file_uploader("Upload Manga Pages/PDFs (Max 10)", type=["png", "jpg", "jpeg", "pdf"], accept_multiple_files=True)
+    input_mode = st.sidebar.radio(
+        "📥 Input Method",
+        ["📁 Upload Image", "✏️ Input Text"],
+        index=0 if st.session_state.input_mode == "📁 Upload Image" else 1,
+        key="input_mode_selector"
+    )
+    st.session_state.input_mode = input_mode
 
-    if uploaded_files:
-        # Enforce limit of 10 files
-        if len(uploaded_files) > 10:
-            st.warning(f"⚠️ You have uploaded {len(uploaded_files)} files. Only the first 10 will be processed to stay within limits.")
-            uploaded_files = uploaded_files[:10]
-            
-        # 2. Image Selection & Cropping
-        file_names = [f.name for f in uploaded_files]
-        selected_file_name = st.selectbox("Select File to Crop", file_names)
-    
-        # Find the selected file object
-        selected_file = next(f for f in uploaded_files if f.name == selected_file_name)
-    
-        is_pdf = selected_file_name.lower().endswith('.pdf')
-    
-        # Initialize pdf_page in session state if not present
-        if 'pdf_page' not in st.session_state:
-            st.session_state.pdf_page = 1
-        if 'last_pdf_page' not in st.session_state:
-            st.session_state.last_pdf_page = 1
+    if input_mode != st.session_state.prev_input_mode:
+        st.session_state.prev_input_mode = input_mode
+        st.session_state.current_file = ""
+        st.session_state.diacritized_text = ""
+        st.session_state.extracted_text = ""
+        st.session_state.processed_by = ""
+        st.session_state.verbs = []
+        st.session_state.nouns = []
+        st.session_state.particles = []
+        st.session_state.cropped_img = None
+        st.session_state.cropper_collapsed = False
+        st.session_state.sarf_results = None
+        st.session_state.sarf_word = ""
+        st.session_state.verb_results = None
+        st.session_state.last_analyzed_verb = ""
+        st.session_state.noun_results = None
+        st.session_state.last_analyzed_noun = ""
+        st.rerun()
 
-        # Reset session state if the selected file name changes
-        if st.session_state.current_file != selected_file_name:
-            st.session_state.current_file = selected_file_name
-            st.session_state.extracted_text = ""
-            st.session_state.diacritized_text = ""
-            st.session_state.sarf_results = None
-            st.session_state.sarf_word = ""
-            st.session_state.verb_results = None
-            st.session_state.last_analyzed_verb = ""
-            st.session_state.noun_results = None
-            st.session_state.last_analyzed_noun = ""
-            st.session_state.processed_by = ""
-            st.session_state.zoom_factor = 1.0
-            st.session_state.zoom_level = 1.0
-            st.session_state.pan_x = 0.0
-            st.session_state.pan_y = 0.0
-            st.session_state.verbs = []
-            st.session_state.nouns = []
-            st.session_state.particles = []
-            st.session_state.pdf_page = 1
-            st.session_state.last_pdf_page = 1
+    selected_file_name = "Direct Text Input"
+    cropped_img = None
+    process_clicked = False
+    text_process_clicked = False
 
-        # PDF Navigation in Sidebar
-        if is_pdf:
-            try:
-                pdf_bytes = selected_file.getvalue()
-                pdf_reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
-                num_pages = len(pdf_reader.pages)
-            except Exception as e:
-                st.error(f"Error reading PDF: {e}")
-                num_pages = 1
-            
-            if st.session_state.pdf_page > num_pages:
-                st.session_state.pdf_page = num_pages
-            if st.session_state.pdf_page < 1:
+    if input_mode == "📁 Upload Image":
+        uploaded_files = st.file_uploader("Upload Manga Pages/PDFs (Max 10)", type=["png", "jpg", "jpeg", "pdf"], accept_multiple_files=True)
+
+        if uploaded_files:
+            # Enforce limit of 10 files
+            if len(uploaded_files) > 10:
+                st.warning(f"⚠️ You have uploaded {len(uploaded_files)} files. Only the first 10 will be processed to stay within limits.")
+                uploaded_files = uploaded_files[:10]
+
+            # 2. Image Selection & Cropping
+            file_names = [f.name for f in uploaded_files]
+            selected_file_name = st.selectbox("Select File to Crop", file_names)
+
+            # Find the selected file object
+            selected_file = next(f for f in uploaded_files if f.name == selected_file_name)
+
+            is_pdf = selected_file_name.lower().endswith('.pdf')
+
+            # Initialize pdf_page in session state if not present
+            if 'pdf_page' not in st.session_state:
                 st.session_state.pdf_page = 1
+            if 'last_pdf_page' not in st.session_state:
+                st.session_state.last_pdf_page = 1
 
-            st.sidebar.markdown("---")
-            st.sidebar.subheader("📄 PDF Page Navigation")
-
-            col_prev, col_page, col_next = st.sidebar.columns([1, 2, 1])
-
-            if col_prev.button("⬅️", disabled=(st.session_state.pdf_page <= 1), width="stretch"):
-                st.session_state.pdf_page -= 1
-
-            col_page.number_input(
-                f"Page (1 of {num_pages})",
-                min_value=1,
-                max_value=num_pages,
-                step=1,
-                key="pdf_page",
-                label_visibility="collapsed",
-            )
-
-            if col_next.button("➡️", disabled=(st.session_state.pdf_page >= num_pages), width="stretch"):
-                st.session_state.pdf_page += 1
-        
-            if st.session_state.pdf_page != st.session_state.last_pdf_page:
+            # Reset session state if the selected file name changes
+            if st.session_state.current_file != selected_file_name:
+                st.session_state.current_file = selected_file_name
                 st.session_state.extracted_text = ""
                 st.session_state.diacritized_text = ""
                 st.session_state.sarf_results = None
@@ -1491,801 +1472,748 @@ if nav_page == "📖 Diacritizer & Analyzer":
                 st.session_state.verbs = []
                 st.session_state.nouns = []
                 st.session_state.particles = []
-                st.session_state.last_pdf_page = st.session_state.pdf_page
+                st.session_state.pdf_page = 1
+                st.session_state.last_pdf_page = 1
 
-        # Load image (from PIL directly or render from PDF)
-        img = None
-        if is_pdf:
-            try:
-                img = render_pdf_page(selected_file.getvalue(), st.session_state.pdf_page)
-            except Exception as e:
-                if "poppler" in str(e).lower() or "pdfinfo" in str(e).lower():
-                    st.error(
-                        "⚠️ **System dependency error:** `poppler` is required to render PDF pages but was not found on your system.\n\n"
-                        "**How to fix:**\n"
-                        "1. Download Poppler for Windows (e.g., from [conda-forge](https://anaconda.org/conda-forge/poppler) or [GitHub Releases](https://github.com/oschwartz10612/poppler-windows/releases)).\n"
-                        "2. Extract the archive and add the `bin` folder to your system PATH.\n"
-                        "3. Restart the Streamlit app."
-                    )
-                else:
-                    st.error(f"Error rendering PDF page: {e}")
-        else:
-            try:
-                img = Image.open(selected_file)
-            except Exception as e:
-                st.error(f"Error loading image: {e}")
-
-        if img is None:
-            st.stop()
-    
-        # ── Step 1: Crop (collapsible after processing) ──────────────────────
-        # Toggle collapse on header click
-        step1_label = "✅ Step 1: Crop Selection (click to expand)" if st.session_state.cropper_collapsed else "📌 Step 1: Select the Area to Crop"
-        if st.button(step1_label, key="toggle_step1", use_container_width=True):
-            st.session_state.cropper_collapsed = not st.session_state.cropper_collapsed
-            st.rerun()
-
-        cropped_img = None  # default
-
-        if not st.session_state.cropper_collapsed:
-            st.caption("Draw a rectangle over the speech bubble you want to extract text from. The image will scale to fit your screen — your crop will be mapped to the full-resolution image for best quality.")
-
-            # Cropper key (remount when file/page changes)
-            cropper_key = f"cropper_{selected_file_name}"
+            # PDF Navigation in Sidebar
             if is_pdf:
-                cropper_key += f"_p{st.session_state.pdf_page}"
+                try:
+                    pdf_bytes = selected_file.getvalue()
+                    pdf_reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+                    num_pages = len(pdf_reader.pages)
+                except Exception as e:
+                    st.error(f"Error reading PDF: {e}")
+                    num_pages = 1
 
-            # ── Pre-scale image to Streamlit column width ──────────────────────
-            # The Fabric.js canvas inside the iframe is sized from the image we pass in,
-            # NOT from CSS. So we control the canvas width by scaling the image ourselves.
-            DISPLAY_WIDTH = 700  # matches Streamlit's default column width
-            display_img = fit_image_to_max_width(img, max_width=DISPLAY_WIDTH)
-            # Also scale UP small images so they fill the full column
-            if display_img.width < DISPLAY_WIDTH:
-                scale_up = DISPLAY_WIDTH / display_img.width
-                display_img = display_img.resize(
-                    (DISPLAY_WIDTH, int(display_img.height * scale_up)),
-                    Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
+                if st.session_state.pdf_page > num_pages:
+                    st.session_state.pdf_page = num_pages
+                if st.session_state.pdf_page < 1:
+                    st.session_state.pdf_page = 1
+
+                st.sidebar.markdown("---")
+                st.sidebar.subheader("📄 PDF Page Navigation")
+
+                col_prev, col_page, col_next = st.sidebar.columns([1, 2, 1])
+
+                if col_prev.button("⬅️", disabled=(st.session_state.pdf_page <= 1), width="stretch"):
+                    st.session_state.pdf_page -= 1
+
+                col_page.number_input(
+                    f"Page (1 of {num_pages})",
+                    min_value=1,
+                    max_value=num_pages,
+                    step=1,
+                    key="pdf_page",
+                    label_visibility="collapsed",
                 )
 
+                if col_next.button("➡️", disabled=(st.session_state.pdf_page >= num_pages), width="stretch"):
+                    st.session_state.pdf_page += 1
+
+                if st.session_state.pdf_page != st.session_state.last_pdf_page:
+                    st.session_state.extracted_text = ""
+                    st.session_state.diacritized_text = ""
+                    st.session_state.sarf_results = None
+                    st.session_state.sarf_word = ""
+                    st.session_state.verb_results = None
+                    st.session_state.last_analyzed_verb = ""
+                    st.session_state.noun_results = None
+                    st.session_state.last_analyzed_noun = ""
+                    st.session_state.processed_by = ""
+                    st.session_state.zoom_factor = 1.0
+                    st.session_state.zoom_level = 1.0
+                    st.session_state.pan_x = 0.0
+                    st.session_state.pan_y = 0.0
+                    st.session_state.verbs = []
+                    st.session_state.nouns = []
+                    st.session_state.particles = []
+                    st.session_state.last_pdf_page = st.session_state.pdf_page
+
+            # Load image (from PIL directly or render from PDF)
+            img = None
+            if is_pdf:
+                try:
+                    img = render_pdf_page(selected_file.getvalue(), st.session_state.pdf_page)
+                except Exception as e:
+                    if "poppler" in str(e).lower() or "pdfinfo" in str(e).lower():
+                        st.error(
+                            "⚠️ **System dependency error:** `poppler` is required to render PDF pages but was not found on your system.\n\n"
+                            "**How to fix:**\n"
+                            "1. Download Poppler for Windows (e.g., from [conda-forge](https://anaconda.org/conda-forge/poppler) or [GitHub Releases](https://github.com/oschwartz10612/poppler-windows/releases)).\n"
+                            "2. Extract the archive and add the `bin` folder to your system PATH.\n"
+                            "3. Restart the Streamlit app."
+                        )
+                    else:
+                        st.error(f"Error rendering PDF page: {e}")
+            else:
+                try:
+                    img = Image.open(selected_file)
+                except Exception as e:
+                    st.error(f"Error loading image: {e}")
+
+            if img is None:
+                st.stop()
+
+            # ── Step 1: Crop (collapsible after processing) ──────────────────────
+            # Toggle collapse on header click
+            step1_label = "✅ Step 1: Crop Selection (click to expand)" if st.session_state.cropper_collapsed else "📌 Step 1: Select the Area to Crop"
+            if st.button(step1_label, key="toggle_step1", use_container_width=True):
+                st.session_state.cropper_collapsed = not st.session_state.cropper_collapsed
+                st.rerun()
+
+            cropped_img = None  # default
+
+            if not st.session_state.cropper_collapsed:
+                st.caption("Draw a rectangle over the speech bubble you want to extract text from. The image will scale to fit your screen — your crop will be mapped to the full-resolution image for best quality.")
+
+                # Cropper key (remount when file/page changes)
+                cropper_key = f"cropper_{selected_file_name}"
+                if is_pdf:
+                    cropper_key += f"_p{st.session_state.pdf_page}"
+
+                # ── Pre-scale image to Streamlit column width ──────────────────────
+                # The Fabric.js canvas inside the iframe is sized from the image we pass in,
+                # NOT from CSS. So we control the canvas width by scaling the image ourselves.
+                DISPLAY_WIDTH = 700  # matches Streamlit's default column width
+                display_img = fit_image_to_max_width(img, max_width=DISPLAY_WIDTH)
+                # Also scale UP small images so they fill the full column
+                if display_img.width < DISPLAY_WIDTH:
+                    scale_up = DISPLAY_WIDTH / display_img.width
+                    display_img = display_img.resize(
+                        (DISPLAY_WIDTH, int(display_img.height * scale_up)),
+                        Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
+                    )
 
 
-            # Cropper operates on the display image; canvas = display_img size
-            box = st_cropper(
-                display_img,
-                realtime_update=True,
-                box_color='#FF4444',
-                aspect_ratio=None,
-                return_type='box',
-                should_resize_image=False,
-                key=cropper_key
-            )
 
-            # Inject JS (via a height=0 helper iframe) that reaches INTO the cropper iframe
-            # and centers the .canvas-container — CSS from the parent page can't do this.
-            st.components.v1.html("""
-            <script>
-            (function() {
-                function centerCropperCanvas() {
-                    var parentDoc = window.parent.document;
-                    var iframes = parentDoc.querySelectorAll('iframe');
-                    var found = false;
-                    iframes.forEach(function(iframe) {
-                        try {
-                            var iDoc = iframe.contentDocument || iframe.contentWindow.document;
-                            if (!iDoc) return;
-                            var container = iDoc.querySelector('.canvas-container');
-                            if (!container) return;
-                            found = true;
-                            // Center the canvas wrapper inside the iframe
-                            container.style.marginLeft  = 'auto';
-                            container.style.marginRight = 'auto';
-                            container.style.display     = 'block';
-                            // Flex-center the iframe body so margin: auto works
-                            var body = iDoc.body;
-                            if (body) {
-                                body.style.margin          = '0';
-                                body.style.padding         = '0';
-                                body.style.display         = 'flex';
-                                body.style.flexDirection   = 'column';
-                                body.style.alignItems      = 'center';
-                                body.style.justifyContent  = 'flex-start';
-                                body.style.overflow        = 'hidden';
-                                body.style.width           = '100%';
-                            }
-                        } catch(e) { /* cross-origin, skip */ }
+                # Cropper operates on the display image; canvas = display_img size
+                box = st_cropper(
+                    display_img,
+                    realtime_update=True,
+                    box_color='#FF4444',
+                    aspect_ratio=None,
+                    return_type='box',
+                    should_resize_image=False,
+                    key=cropper_key
+                )
+
+                # Inject JS (via a height=0 helper iframe) that reaches INTO the cropper iframe
+                # and centers the .canvas-container — CSS from the parent page can't do this.
+                st.components.v1.html("""
+                <script>
+                (function() {
+                    function centerCropperCanvas() {
+                        var parentDoc = window.parent.document;
+                        var iframes = parentDoc.querySelectorAll('iframe');
+                        var found = false;
+                        iframes.forEach(function(iframe) {
+                            try {
+                                var iDoc = iframe.contentDocument || iframe.contentWindow.document;
+                                if (!iDoc) return;
+                                var container = iDoc.querySelector('.canvas-container');
+                                if (!container) return;
+                                found = true;
+                                // Center the canvas wrapper inside the iframe
+                                container.style.marginLeft  = 'auto';
+                                container.style.marginRight = 'auto';
+                                container.style.display     = 'block';
+                                // Flex-center the iframe body so margin: auto works
+                                var body = iDoc.body;
+                                if (body) {
+                                    body.style.margin          = '0';
+                                    body.style.padding         = '0';
+                                    body.style.display         = 'flex';
+                                    body.style.flexDirection   = 'column';
+                                    body.style.alignItems      = 'center';
+                                    body.style.justifyContent  = 'flex-start';
+                                    body.style.overflow        = 'hidden';
+                                    body.style.width           = '100%';
+                                }
+                            } catch(e) { /* cross-origin, skip */ }
+                        });
+                        return found;
+                    }
+                    // Retry because the cropper iframe loads asynchronously
+                    [100, 400, 900, 2000].forEach(function(delay) {
+                        setTimeout(centerCropperCanvas, delay);
                     });
-                    return found;
-                }
-                // Retry because the cropper iframe loads asynchronously
-                [100, 400, 900, 2000].forEach(function(delay) {
-                    setTimeout(centerCropperCanvas, delay);
-                });
-            })();
-            </script>
-            """, height=0)
+                })();
+                </script>
+                """, height=0)
 
-            # Map box coordinates back to the original full-resolution image
-            scale_ratio = img.width / display_img.width  # e.g. 2× if original was 1400px
-            if box is not None:
-                left   = max(0, int(box.get('left',   0) * scale_ratio))
-                top    = max(0, int(box.get('top',    0) * scale_ratio))
-                width  = max(1, int(box.get('width',  display_img.width)  * scale_ratio))
-                height = max(1, int(box.get('height', display_img.height) * scale_ratio))
-                right  = min(img.width,  left + width)
-                bottom = min(img.height, top  + height)
-                cropped_img = img.crop((left, top, right, bottom))
-                st.session_state.cropped_img = cropped_img  # persist across reruns
+                # Map box coordinates back to the original full-resolution image
+                scale_ratio = img.width / display_img.width  # e.g. 2× if original was 1400px
+                if box is not None:
+                    left   = max(0, int(box.get('left',   0) * scale_ratio))
+                    top    = max(0, int(box.get('top',    0) * scale_ratio))
+                    width  = max(1, int(box.get('width',  display_img.width)  * scale_ratio))
+                    height = max(1, int(box.get('height', display_img.height) * scale_ratio))
+                    right  = min(img.width,  left + width)
+                    bottom = min(img.height, top  + height)
+                    cropped_img = img.crop((left, top, right, bottom))
+                    st.session_state.cropped_img = cropped_img  # persist across reruns
 
-            # Centered "Process & Add Vowels" button below the cropper
-            st.markdown("<div style='height: 12px'></div>", unsafe_allow_html=True)
-            _, btn_col, _ = st.columns([1, 2, 1])
-        
-            with btn_col:
-                process_clicked = st.button("⚡ Process & Add Vowels", type="primary", use_container_width=True)
-            st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
+                # Centered "Process & Add Vowels" button below the cropper
+                st.markdown("<div style='height: 12px'></div>", unsafe_allow_html=True)
+                _, btn_col, _ = st.columns([1, 2, 1])
 
-        else:
-            # Collapsed — still need a placeholder so the button logic below works
-            process_clicked = False
+                with btn_col:
+                    process_clicked = st.button("⚡ Process & Add Vowels", type="primary", use_container_width=True)
+                st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
 
-        # ── Step 2: Results ──────────────────────────────────────────────────
-        st.markdown("---")
+            else:
+                # Collapsed — still need a placeholder so the button logic below works
+                process_clicked = False
 
-        if cropped_img or st.session_state.diacritized_text:
-            # User feedback badge
-            if st.session_state.processed_by:
-                st.info(f"⚡ **Last processed by:** {st.session_state.processed_by}")
-            elif cropped_img and not st.session_state.cropper_collapsed:
-                st.caption(f"Ready to process using: **{ocr_mode}**")
-
-            if process_clicked and cropped_img:
-                    with st.spinner("Extracting text and applying Tashkeel..."):
-                        try:
-                            if ocr_mode == "🟢 Hybrid Mode (EasyOCR + Gemini Text)":
-                                # Convert PIL image to numpy array for EasyOCR
-                                cropped_array = np.array(cropped_img)
-                                results = reader.readtext(cropped_array, detail=0, paragraph=True)
-                                extracted_text = " ".join(results)
-                            
-                                if not extracted_text.strip():
-                                    st.error("No text detected in the selected area. Please try cropping a clearer area or a different bubble.")
-                                    st.session_state.extracted_text = ""
-                                    st.session_state.diacritized_text = ""
-                                    st.session_state.processed_by = ""
-                                    st.session_state.verbs = []
-                                    st.session_state.nouns = []
-                                    st.session_state.particles = []
-                                    st.session_state.sarf_results = None
-                                    st.session_state.sarf_word = ""
-                                    st.session_state.verb_results = None
-                                    st.session_state.last_analyzed_verb = ""
-                                    st.session_state.noun_results = None
-                                    st.session_state.last_analyzed_noun = ""
-                                else:
-                                    # Call Gemini 3.1 Flash-Lite
-                                    gemini_res = gemini_tashkeel(extracted_text)
-                                    diacritized_text = gemini_res.get("tashkeel_text", extracted_text)
-                                    full_trans = gemini_res.get("full_translation", "")
-                                    verbs_list = gemini_res.get("verbs", [])
-                                    nouns_list = gemini_res.get("nouns", [])
-                                    particles_list = gemini_res.get("particles", [])
-                                
-                                    st.session_state.extracted_text = extracted_text
-                                    st.session_state.diacritized_text = diacritized_text
-                                    st.session_state.full_translation = full_trans
-                                    st.session_state.processed_by = ocr_mode
-                                    st.session_state.verbs = verbs_list
-                                    st.session_state.nouns = nouns_list
-                                    st.session_state.particles = particles_list
-                                    st.session_state.sarf_results = None
-                                    st.session_state.sarf_word = ""
-                                    st.session_state.verb_results = None
-                                    st.session_state.last_analyzed_verb = ""
-                                    st.session_state.noun_results = None
-                                    st.session_state.last_analyzed_noun = ""
-                                    # Persist cropped image & collapse step 1
-                                    st.session_state.cropped_img = cropped_img
-                                    st.session_state.cropper_collapsed = True
-                                    st.rerun()
+    # ── Step 2: Results ──────────────────────────────────────────────────
+    st.markdown("---")
+    if cropped_img or st.session_state.diacritized_text or text_process_clicked:
+        # User feedback badge
+        if st.session_state.processed_by:
+            st.info(f"⚡ **Last processed by:** {st.session_state.processed_by}")
+        elif cropped_img and not st.session_state.cropper_collapsed:
+            st.caption(f"Ready to process using: **{ocr_mode}**")
+        if process_clicked and cropped_img:
+                with st.spinner("Extracting text and applying Tashkeel..."):
+                    try:
+                        if ocr_mode == "🟢 Hybrid Mode (EasyOCR + Gemini Text)":
+                            # Convert PIL image to numpy array for EasyOCR
+                            cropped_array = np.array(cropped_img)
+                            results = reader.readtext(cropped_array, detail=0, paragraph=True)
+                            extracted_text = " ".join(results)
+                            if not extracted_text.strip():
+                                st.error("No text detected in the selected area. Please try cropping a clearer area or a different bubble.")
+                                st.session_state.extracted_text = ""
+                                st.session_state.diacritized_text = ""
+                                st.session_state.processed_by = ""
+                                st.session_state.verbs = []
+                                st.session_state.nouns = []
+                                st.session_state.particles = []
+                                st.session_state.sarf_results = None
+                                st.session_state.sarf_word = ""
+                                st.session_state.verb_results = None
+                                st.session_state.last_analyzed_verb = ""
+                                st.session_state.noun_results = None
+                                st.session_state.last_analyzed_noun = ""
                             else:
-                                # Option 2: Full Gemini Vision
-                                gemini_res = gemini_vision_ocr_tashkeel(cropped_img)
-                                diacritized_text = gemini_res.get("tashkeel_text", "")
+                                # Call Gemini 3.1 Flash-Lite
+                                gemini_res = gemini_tashkeel(extracted_text)
+                                diacritized_text = gemini_res.get("tashkeel_text", extracted_text)
                                 full_trans = gemini_res.get("full_translation", "")
                                 verbs_list = gemini_res.get("verbs", [])
                                 nouns_list = gemini_res.get("nouns", [])
                                 particles_list = gemini_res.get("particles", [])
-
-                                if not diacritized_text.strip():
-                                    st.error("Gemini Vision was unable to read any text from the cropped area. Please try a different area.")
-                                    st.session_state.extracted_text = ""
-                                    st.session_state.diacritized_text = ""
-                                    st.session_state.full_translation = ""
-                                    st.session_state.processed_by = ""
-                                    st.session_state.verbs = []
-                                    st.session_state.nouns = []
-                                    st.session_state.particles = []
-                                    st.session_state.sarf_results = None
-                                    st.session_state.sarf_word = ""
-                                    st.session_state.verb_results = None
-                                    st.session_state.last_analyzed_verb = ""
-                                    st.session_state.noun_results = None
-                                    st.session_state.last_analyzed_noun = ""
-                                else:
-                                    # Strip diacritics to get raw extracted text
-                                    extracted_text = strip_tashkeel(diacritized_text)
-
-                                    st.session_state.extracted_text = extracted_text
-                                    st.session_state.diacritized_text = diacritized_text
-                                    st.session_state.full_translation = full_trans
-                                    st.session_state.processed_by = ocr_mode
-                                    st.session_state.verbs = verbs_list
-                                    st.session_state.nouns = nouns_list
-                                    st.session_state.particles = particles_list
-                                    st.session_state.sarf_results = None
-                                    st.session_state.sarf_word = ""
-                                    st.session_state.verb_results = None
-                                    st.session_state.last_analyzed_verb = ""
-                                    st.session_state.noun_results = None
-                                    st.session_state.last_analyzed_noun = ""
-                                    # Persist cropped image & collapse step 1
-                                    st.session_state.cropped_img = cropped_img
-                                    st.session_state.cropper_collapsed = True
-                                    st.rerun()
-                        except Exception as e:
-                            st.error(f"Processing failed: {e}")
-
-            # For results, use the live crop if available; else fall back to the last saved one
-            display_cropped_img = cropped_img or st.session_state.cropped_img
-
-            # Render results if we have diacritized text in session state
-            if st.session_state.diacritized_text:
-                extracted_text = st.session_state.extracted_text
-                diacritized_text = st.session_state.diacritized_text
-            
-                # Top Toolbar: Centered Action Buttons
-                col_m1, col_m2 = st.columns(2)
-                with col_m1:
-                    if st.button("📄 Raw Text", key="btn_open_raw_modal", icon=":material/description:", use_container_width=True):
-                        show_raw_text_modal()
-                with col_m2:
-                    if st.button("✨ Diacritized Text", key="btn_open_diacritized_modal", icon=":material/edit_note:", use_container_width=True):
-                        show_diacritized_text_modal()
-
-                st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
-
-                # ── Captured image above results ──
-                if display_cropped_img:
-                    import base64 as _b64
-                    from io import BytesIO as _BytesIO
-                    _buf = _BytesIO()
-                    display_cropped_img.save(_buf, format="PNG")
-                    _img_str = _b64.b64encode(_buf.getvalue()).decode()
-                    st.markdown(f"""
-                    <div style="padding:25px;border:1px solid rgba(128,128,128,0.25);border-radius:10px;margin-bottom:1rem;">
-                        <img src="data:image/png;base64,{_img_str}" style="width:100%;height:auto;display:block;border-radius:6px;">
-                        <div style="text-align:center;font-size:0.82rem;margin-top:10px;opacity:0.6;">✨ Captured Image</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                with st.container(border=True):
-                    col_thdr, col_ttog = st.columns([2, 1], vertical_alignment="center")
-                    with col_thdr:
-                        st.markdown("#### ✨ Tashkeel Text")
-                    with col_ttog:
-                        show_vowels = st.toggle("Vowels", value=True, key="main_vowel_toggle")
-
-                    v_html, nv_html, sentence_tokens = build_interactive_tashkeel_html(
-                        diacritized_text,
-                        json.dumps(st.session_state.verbs),
-                        json.dumps(st.session_state.nouns),
-                        json.dumps(st.session_state.particles),
-                    )
-
-                    st.markdown(f'<div dir="rtl" class="arabic-text tashkeeled" id="tashkeel-container-main">{v_html}</div>', unsafe_allow_html=True)
-
-                    st.components.v1.html(f"""
-                    <script>
-                    (function() {{
-                        var SHOW_VOWELS = {str(show_vowels).lower()};
-                        var container = window.parent.document.getElementById('tashkeel-container-main');
-                        if (!container) return;
-                        var spans = container.querySelectorAll('.tashkeel-word');
-                        for (var i = 0; i < spans.length; i++) {{
-                            var span = spans[i];
-                            span.textContent = span.getAttribute('data-vowel') || span.textContent;
-                            span.style.minWidth = span.getBoundingClientRect().width + 'px';
-                            if (!SHOW_VOWELS) {{
-                                span.textContent = span.getAttribute('data-novowel') || span.textContent;
-                            }}
-                        }}
-                    }})();
-                    </script>
-                    """, height=0)
-                    render_arabic_tts(diacritized_text, tts_engine_choice, key_suffix="full_sentence")
-
-                    st.components.v1.html("""
-                    <script>
-                    (function() {
-                        try {
-                            var pDoc = window.parent.document;
-                            var pWin = window.parent;
-
-                            var existingTip = pDoc.getElementById('global-tashkeel-tooltip');
-                            if (existingTip) existingTip.remove();
-
-                            var tip = pDoc.createElement('div');
-                            tip.id = 'global-tashkeel-tooltip';
-                            tip.style.cssText = 'position: absolute; background-color: #0f172a; color: #ffffff; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-family: system-ui, -apple-system, sans-serif; font-weight: 500; z-index: 999999; pointer-events: none; white-space: normal; max-width: 280px; word-wrap: break-word; display: none; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); text-align: center; line-height: 1.4; transition: opacity 0.15s ease; opacity: 0;';
-                            pDoc.body.appendChild(tip);
-
-                            function showTip(span) {
-                                var tipText = span.getAttribute('data-tooltip') || span.getAttribute('title');
-                                if (!tipText) return;
-
-                                tip.textContent = tipText;
-                                tip.style.display = 'block';
-                                tip.style.opacity = '1';
-
-                                var rect = span.getBoundingClientRect();
-                                var scrollTop = pWin.pageYOffset || pDoc.documentElement.scrollTop;
-                                var scrollLeft = pWin.pageXOffset || pDoc.documentElement.scrollLeft;
-
-                                var tipW = tip.offsetWidth;
-                                var tipH = tip.offsetHeight;
-                                var screenW = pDoc.documentElement.clientWidth;
-
-                                var top = rect.top + scrollTop - tipH - 8;
-                                if (top < scrollTop) {
-                                    top = rect.bottom + scrollTop + 8;
-                                }
-
-                                var left = rect.left + scrollLeft + (rect.width / 2) - (tipW / 2);
-                                left = Math.max(12, Math.min(left, screenW - tipW - 12));
-
-                                tip.style.top = top + 'px';
-                                tip.style.left = left + 'px';
-
-                                pWin.clearTimeout(pWin._tashkeelTipTimer);
-                                pWin._tashkeelTipTimer = pWin.setTimeout(function() {
-                                    tip.style.opacity = '0';
-                                    pWin.setTimeout(function() { if (tip.style.opacity === '0') tip.style.display = 'none'; }, 150);
-                                }, 3500);
-                            }
-
-                            function hideTip() {
-                                if (tip) {
-                                    tip.style.opacity = '0';
-                                    pWin.setTimeout(function() { if (tip.style.opacity === '0') tip.style.display = 'none'; }, 150);
-                                }
-                            }
-
-                            if (pWin._tashkeelHandler) {
-                                pDoc.removeEventListener('click', pWin._tashkeelHandler, true);
-                                pDoc.removeEventListener('touchend', pWin._tashkeelHandler, true);
-                            }
-
-                            pWin._tashkeelHandler = function(e) {
-                                var span = e.target.closest('.tashkeel-word');
-                                if (span) {
-                                    showTip(span);
-                                } else {
-                                    hideTip();
-                                }
-                            };
-
-                            pDoc.addEventListener('click', pWin._tashkeelHandler, true);
-                            pDoc.addEventListener('touchend', pWin._tashkeelHandler, true);
-                        } catch(err) {
-                            console.error(err);
-                        }
-                    })();
-                    </script>
-                    """, height=0)
-
-
-            
-                st.markdown("### English Translation")
-                if st.session_state.full_translation:
-                    st.success(st.session_state.full_translation)
-                else:
-                    try:
-                        translated_text = GoogleTranslator(source='ar', target='en').translate(diacritized_text)
-                        st.success(translated_text)
-                    except Exception as e:
-                        st.warning(f"Translation failed: {e}")
-            
-                # Interactive Word Lookup Reader
-                st.markdown("---")
-                st.markdown("### 👆 Interactive Word Lookup (Click or Hover)")
-                st.caption("Click any word in the sentence below to view its instant contextual translation, grammar role, and root.")
-
-                selected_word = st.pills(
-                    "Select a word from the diacritized sentence:",
-                    options=sentence_tokens,
-                    selection_mode="single",
-                    key="interactive_sentence_pills"
-                )
-
-                if selected_word:
-                    raw_selected = strip_tashkeel(selected_word)
-                    info = word_map.get(selected_word) or word_map.get(raw_selected)
-                    
-                    # 1. Grab Gemini's root from lookup object
-                    gemini_root = info.get("root") if info else None
-
-                    if gemini_root and gemini_root != "N/A":
-                        # Formats Gemini's "ب-س-م" cleanly to "ب - س - م"
-                        root_display = " - ".join(gemini_root.replace("-", " ").split())
-                    else:
-                        # 2. Fallback to Farasa ONLY if Gemini didn't return a root
-                        try:
-                            stemmed = farasa_stemmer.stem(selected_word)
-                            clean_root = re.sub(r'[^\u0621-\u064A]', '', stemmed)
-                            root_display = " - ".join(list(clean_root)) if clean_root else "N/A"
-                        except Exception:
-                            root_display = "N/A"
-
-                    # 3. Always render the card container (OUTSIDE the if/else block)
-                    with st.container(border=True):
-                        col_w1, col_w2 = st.columns([1, 2])
-                        with col_w1:
-                            st.markdown(f"""
-                            <div dir="rtl" class="arabic-text arabic-large" style="color: #1E88E5; font-weight: bold; padding: 12px; border-radius: 6px; background-color: rgba(30, 136, 229, 0.08); text-align: center; margin-bottom: 8px;">
-                                {selected_word}
-                            </div>
-                            """, unsafe_allow_html=True)
-
-                            # Word Audio Player Controls
-                            if "Microsoft Edge" in tts_engine_choice:
-                                if st.button("🔊 Pronounce Word", key=f"btn_word_edge_{selected_word}"):
-                                    try:
-                                        w_audio = generate_edge_audio(selected_word)
-                                        st.audio(w_audio, format="audio/mp3", autoplay=True)
-                                    except Exception as e:
-                                        st.error(f"TTS Error: {e}")
-                            elif "Google Voice" in tts_engine_choice:
-                                if st.button("🔊 Pronounce Word", key=f"btn_word_gtts_{selected_word}"):
-                                    try:
-                                        w_audio = generate_gtts_audio(selected_word)
-                                        st.audio(w_audio, format="audio/mp3", autoplay=True)
-                                    except Exception as e:
-                                        st.error(f"TTS Error: {e}")
-                            else:
-                                esc_w = selected_word.replace("'", "\\'").replace('"', '\\"')
-                                html_word = f"""
-                                <button onclick="speakWord('{esc_w}')" style="background:#1E88E5; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; width:100%;">
-                                    ⚡ 🔊 Pronounce Word
-                                </button>
-                                <script>
-                                function speakWord(w) {{
-                                    if ('speechSynthesis' in window) {{
-                                        window.speechSynthesis.cancel();
-                                        const msg = new SpeechSynthesisUtterance(w);
-                                        msg.lang = 'ar-SA';
-                                        msg.rate = 0.8;
-                                        const voices = window.speechSynthesis.getVoices();
-                                        const v = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('ar'));
-                                        if (v) msg.voice = v;
-                                        window.speechSynthesis.speak(msg);
-                                    }}
-                                }}
-                                </script>
-                                """
-                                components.html(html_word, height=40)
-                        with col_w2:
-                            if info:
-                                sub_type_val = info.get('sub_type', 'Noun')
-                                derived_val = info.get('derived', False)
-                                base_verb_val = info.get('base_verb')
-                                root_val = info.get('root') or root_display
-
-                                st.markdown(f"**💡 Contextual Meaning:** {info.get('meaning', 'N/A')}")
-                                st.markdown(f"**🏷️ Category / Role:** {info.get('role', 'Unknown')}")
-                                st.markdown(f"**🏷️ Morphological Type:** {render_sub_type_badge(sub_type_val, derived_val, base_verb_val)}", unsafe_allow_html=True)
-                                if info.get('effect'):
-                                    st.markdown(f"**⚡ Grammatical Effect:** {info.get('effect')}")
-
-                                can_generate_sarf = derived_val or sub_type_val == 'Verb' or (base_verb_val is not None) or (root_val is not None)
-                                if can_generate_sarf:
-                                    sarf_target_verb = base_verb_val if base_verb_val else selected_word
-                                    if st.button(f"⚡ Generate Sarf for '{sarf_target_verb}'", key=f"btn_card_sarf_{selected_word}"):
-                                        with st.spinner(f"Generating Sarf paradigm for base verb '{sarf_target_verb}'..."):
-                                            try:
-                                                target_r = root_val if root_val else root_display
-                                                s_data = get_verb_analysis(sarf_target_verb, target_r)
-                                                st.session_state.verb_results = s_data
-                                                st.session_state.last_analyzed_verb = sarf_target_verb
-                                                auto_save_or_update_current_entry(
-                                                    selected_file_name, display_cropped_img, diacritized_text,
-                                                    st.session_state.full_translation, st.session_state.verbs,
-                                                    st.session_state.nouns, st.session_state.particles,
-                                                    st.session_state.verb_results, st.session_state.last_analyzed_verb,
-                                                    st.session_state.noun_results, st.session_state.last_analyzed_noun
-                                                )
-                                                st.success(f"Generated Sarf paradigm for '{sarf_target_verb}'! Auto-saved to study database 💾")
-                                            except Exception as e:
-                                                st.error(f"Sarf generation failed: {e}")
-                            else:
-                                try:
-                                    quick_trans = GoogleTranslator(source='ar', target='en').translate(selected_word)
-                                except Exception:
-                                    quick_trans = "N/A"
-                                st.markdown(f"**💡 Contextual Meaning:** {quick_trans}")
-                                st.markdown("**🏷️ Category / Role:** Unclassified Word")
-
-                            if root_display and root_display != "N/A":
-                                st.markdown(f"**🌱 Extracted Root:** `{root_display}`")
-            
-                # Morphological and sarf analysis section
-                st.markdown("---")
-                with st.container(border=True):
-                    st.subheader("Morphological and sarf analysis")
-                
-                    detected_verbs = st.session_state.verbs
-                    detected_nouns = st.session_state.nouns
-                    detected_particles = st.session_state.particles
-
-                    # Setup tabs for all 3 pillars of Arabic grammar
-                    tab1, tab2, tab3 = st.tabs(["⚙️ Verbs (فِعْل)", "🏷️ Nouns (اسْم)", "📌 Particles (حُرُوف)"])
-
-                    with tab1:
-                        st.subheader("Verb Analysis")
-                    
-                        # Populate verb selectbox with fallback to custom input
-                        if detected_verbs:
-                            verb_options = []
-                            verb_word_map = {}
-                            for v in detected_verbs:
-                                if isinstance(v, dict):
-                                    w = v.get("word", "")
-                                    m = v.get("meaning", "")
-                                elif hasattr(v, 'word'):
-                                    w = getattr(v, 'word', "")
-                                    m = getattr(v, 'meaning', "")
-                                else:
-                                    w = str(v)
-                                    m = ""
-                                disp = f"{w} ({m})" if m else w
-                                verb_options.append(disp)
-                                verb_word_map[disp] = w
-
-                            selected_verb_disp = st.selectbox(
-                                "Select a word to analyze as a Verb",
-                                options=verb_options,
-                                key="verb_select"
-                            )
-                            custom_verb = st.text_input("Or type a custom Arabic verb to analyze", key="verb_custom")
-                            verb_to_analyze = custom_verb.strip() if custom_verb.strip() else verb_word_map.get(selected_verb_disp, selected_verb_disp)
-                        else:
-                            st.info("No verbs detected in this crop. You can enter one manually below.")
-                            verb_to_analyze = st.text_input("Type an Arabic verb to analyze", key="verb_custom_only")
-                        
-                        if verb_to_analyze:
-                            # 1. Run local Farasa Stemmer first to get the root
-                            try:
-                                stemmed_verb = farasa_stemmer.stem(verb_to_analyze)
-                                clean_verb_root = re.sub(r'[^\u0621-\u064A]', '', stemmed_verb)
-                                verb_root_display = " - ".join(list(clean_verb_root))
-                            except Exception as e:
-                                st.error(f"Farasa Stemmer Error: {e}")
-                                clean_verb_root = verb_to_analyze
-                                verb_root_display = "Unknown"
-                            
-                            try:
-                                verb_trans = GoogleTranslator(source='ar', target='en').translate(verb_to_analyze)
-                                verb_root_trans = GoogleTranslator(source='ar', target='en').translate(clean_verb_root)
-                            except Exception:
-                                verb_trans = "N/A"
-                                verb_root_trans = "N/A"
-                            
-                            st.markdown(f"""
-                            <div style="font-size: 18px; margin-bottom: 10px;">
-                                Analyzing verb: <span class="arabic-text arabic-medium" style="font-weight: bold; color: #1E88E5;">{verb_to_analyze}</span> (Translation: <em>{verb_trans}</em>)
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                            st.info(f"🌱 Extracted Local Root: {verb_root_display} (Translation: {verb_root_trans})")
-                        
-                            # Clear results if the verb changes
-                            if st.session_state.last_analyzed_verb != verb_to_analyze:
+                                st.session_state.extracted_text = extracted_text
+                                st.session_state.diacritized_text = diacritized_text
+                                st.session_state.full_translation = full_trans
+                                st.session_state.processed_by = ocr_mode
+                                st.session_state.verbs = verbs_list
+                                st.session_state.nouns = nouns_list
+                                st.session_state.particles = particles_list
+                                st.session_state.sarf_results = None
+                                st.session_state.sarf_word = ""
                                 st.session_state.verb_results = None
-                            
-                            api_key = get_gemini_api_key()
-                            if not api_key:
-                                st.warning("⚠️ Gemini API key is missing. Please configure it to enable Verb analysis.")
-                            
-                            if st.button("Analyze Verb via Gemini", key="btn_analyze_verb", disabled=(not api_key)):
-                                with st.spinner("Analyzing verb paradigm..."):
-                                    try:
-                                        verb_data = get_verb_analysis(verb_to_analyze, clean_verb_root)
-                                        st.session_state.verb_results = verb_data
-                                        st.session_state.last_analyzed_verb = verb_to_analyze
-                                        auto_save_or_update_current_entry(
-                                            selected_file_name, display_cropped_img, diacritized_text,
-                                            st.session_state.full_translation, st.session_state.verbs,
-                                            st.session_state.nouns, st.session_state.particles,
-                                            st.session_state.verb_results, st.session_state.last_analyzed_verb,
-                                            st.session_state.noun_results, st.session_state.last_analyzed_noun
-                                        )
-                                        st.toast("Auto-saved Verb Sarf analysis to database! 💾")
-                                    except Exception as e:
-                                        st.error(f"Gemini Verb Analysis failed: {e}")
-                                        st.session_state.verb_results = None
-                                    
-                            # Render results
-                            if st.session_state.verb_results and st.session_state.last_analyzed_verb == verb_to_analyze:
-                                v_data = st.session_state.verb_results
-                            
-                                # Layout metrics
-                                col_v1, col_v2, col_v3 = st.columns(3)
-                                with col_v1:
-                                    st.metric(label="Pattern / Form (الوزن)", value=v_data.get('wazn', 'N/A'))
-                                with col_v2:
-                                    st.metric(label="Past Tense (الماضي)", value=v_data.get('madi', 'N/A'))
-                                with col_v3:
-                                    st.metric(label="Present Tense (المضارع)", value=v_data.get('mudari', 'N/A'))
-                                
-                                st.markdown("#### Morphological paradigm table")
-                                words_to_translate = [
-                                    v_data.get('madi', ''),
-                                    v_data.get('mudari', ''),
-                                    v_data.get('amr', ''),
-                                    v_data.get('masdar', ''),
-                                    v_data.get('ism_faail', ''),
-                                    v_data.get('ism_mafool', '')
-                                ]
-                                translations = translate_words(words_to_translate)
-                            
-                                verb_df = pd.DataFrame({
-                                    "Grammatical Element": [
-                                        "Pattern / Form (الوزن)",
-                                        "Past Tense (الْمَاضِي)",
-                                        "Present Tense (الْمُضَارِع)",
-                                        "Imperative Form (الأَمْر)",
-                                        "Verbal Noun (الْمَصْدَر)",
-                                        "Active Participle (اسْم الْفَاعِل)",
-                                        "Passive Participle (اسْم الْمَفْعُول)"
-                                    ],
-                                    "Arabic Word (with Tashkeel)": [
-                                        v_data.get('wazn', 'N/A'),
-                                        v_data.get('madi', 'N/A'),
-                                        v_data.get('mudari', 'N/A'),
-                                        v_data.get('amr', 'N/A'),
-                                        v_data.get('masdar', 'N/A'),
-                                        v_data.get('ism_faail', 'N/A'),
-                                        v_data.get('ism_mafool', 'N/A')
-                                    ],
-                                    "English Translation": [
-                                        "N/A",
-                                        translations[0],
-                                        translations[1],
-                                        translations[2],
-                                        translations[3],
-                                        translations[4],
-                                        translations[5]
-                                    ]
-                                })
-                                render_custom_table(verb_df)
-                            
-                    with tab2:
-                        st.subheader("Noun Analysis")
-                        word_map = build_word_meaning_map(detected_verbs, detected_nouns, detected_particles)
-
-                        # Populate noun selectbox with fallback to custom input
-                        if detected_nouns:
-                            noun_options = []
-                            noun_word_map = {}
-                            for n in detected_nouns:
-                                if isinstance(n, dict):
-                                    w = n.get("word", "")
-                                    m = n.get("meaning", "")
-                                elif hasattr(n, 'word'):
-                                    w = getattr(n, 'word', "")
-                                    m = getattr(n, 'meaning', "")
-                                else:
-                                    w = str(n)
-                                    m = ""
-                                disp = f"{w} ({m})" if m else w
-                                noun_options.append(disp)
-                                noun_word_map[disp] = w
-
-                            selected_noun_disp = st.selectbox(
-                                "Select a word to analyze as a Noun",
-                                options=noun_options,
-                                key="noun_select"
-                            )
-                            custom_noun = st.text_input("Or type a custom Arabic noun to analyze", key="noun_custom")
-                            noun_to_analyze = custom_noun.strip() if custom_noun.strip() else noun_word_map.get(selected_noun_disp, selected_noun_disp)
-                        else:
-                            st.info("No nouns detected in this crop. You can enter one manually below.")
-                            noun_to_analyze = st.text_input("Type an Arabic noun to analyze", key="noun_custom_only")
-                        
-                        if noun_to_analyze:
-                            # 1. Run local Farasa Stemmer first to get the root
-                            try:
-                                stemmed_noun = farasa_stemmer.stem(noun_to_analyze)
-                                clean_noun_root = re.sub(r'[^\u0621-\u064A]', '', stemmed_noun)
-                                noun_root_display = " - ".join(list(clean_noun_root))
-                            except Exception as e:
-                                st.error(f"Farasa Stemmer Error: {e}")
-                                clean_noun_root = noun_to_analyze
-                                noun_root_display = "Unknown"
-
-                            # Look up noun metadata in word_map
-                            sel_noun_obj = word_map.get(noun_to_analyze) or word_map.get(strip_tashkeel(noun_to_analyze)) or {}
-                            n_derived = sel_noun_obj.get("derived", False)
-                            n_sub_type = sel_noun_obj.get("sub_type", "Solid Noun")
-                            n_base_verb = sel_noun_obj.get("base_verb")
-                            n_root = sel_noun_obj.get("root") or clean_noun_root
-                            
-                            try:
-                                noun_trans = GoogleTranslator(source='ar', target='en').translate(noun_to_analyze)
-                                noun_root_trans = GoogleTranslator(source='ar', target='en').translate(clean_noun_root)
-                            except Exception:
-                                noun_trans = "N/A"
-                                noun_root_trans = "N/A"
-                            
-                            st.markdown(f"""
-                            <div style="font-size: 18px; margin-bottom: 10px;">
-                                Analyzing noun: <span class="arabic-text arabic-medium" style="font-weight: bold; color: #1E88E5;">{noun_to_analyze}</span> (Translation: <em>{noun_trans}</em>) {render_sub_type_badge(n_sub_type, n_derived, n_base_verb)}
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                            st.info(f"🌱 Extracted Local Root: {noun_root_display} (Translation: {noun_root_trans})")
-                        
-                            # Clear results if the noun changes
-                            if st.session_state.last_analyzed_noun != noun_to_analyze:
+                                st.session_state.last_analyzed_verb = ""
                                 st.session_state.noun_results = None
-                            
-                            api_key = get_gemini_api_key()
-                            if not api_key:
-                                st.warning("⚠️ Gemini API key is missing. Please configure it to enable Noun analysis.")
-                            
-                            # NEW LOGIC: Render Sarf button ADJACENT to Noun Analysis if derived == True or base_verb is present
-                            is_noun_derived = n_derived or (n_sub_type in ["Ism Fa'il", "Ism Maf'ul", "Masdar", "Sifah Mushabbahah", "Verb"]) or (n_base_verb is not None)
-
-                            if is_noun_derived:
-                                col_nbtn1, col_nbtn2 = st.columns(2)
-                                with col_nbtn1:
-                                    if st.button("Analyze Noun via Gemini", key="btn_analyze_noun", disabled=(not api_key), use_container_width=True):
-                                        with st.spinner("Analyzing noun forms..."):
-                                            try:
-                                                noun_data = get_noun_analysis(noun_to_analyze, clean_noun_root)
-                                                st.session_state.noun_results = noun_data
-                                                st.session_state.last_analyzed_noun = noun_to_analyze
-                                                auto_save_or_update_current_entry(
-                                                    selected_file_name, display_cropped_img, diacritized_text,
-                                                    st.session_state.full_translation, st.session_state.verbs,
-                                                    st.session_state.nouns, st.session_state.particles,
-                                                    st.session_state.verb_results, st.session_state.last_analyzed_verb,
-                                                    st.session_state.noun_results, st.session_state.last_analyzed_noun
-                                                )
-                                                st.toast("Auto-saved Noun analysis to database! 💾")
-                                            except Exception as e:
-                                                st.error(f"Gemini Noun Analysis failed: {e}")
-                                                st.session_state.noun_results = None
-                                with col_nbtn2:
-                                    sarf_verb_target = n_base_verb if n_base_verb else noun_to_analyze
-                                    if st.button(f"⚡ Generate Sarf for '{sarf_verb_target}'", key="btn_analyze_noun_sarf", disabled=(not api_key), use_container_width=True):
-                                        with st.spinner(f"Generating Sarf paradigm for base verb '{sarf_verb_target}'..."):
-                                            try:
-                                                verb_data = get_verb_analysis(sarf_verb_target, n_root)
-                                                st.session_state.verb_results = verb_data
-                                                st.session_state.last_analyzed_verb = sarf_verb_target
-                                                auto_save_or_update_current_entry(
-                                                    selected_file_name, display_cropped_img, diacritized_text,
-                                                    st.session_state.full_translation, st.session_state.verbs,
-                                                    st.session_state.nouns, st.session_state.particles,
-                                                    st.session_state.verb_results, st.session_state.last_analyzed_verb,
-                                                    st.session_state.noun_results, st.session_state.last_analyzed_noun
-                                                )
-                                                st.success(f"Generated Sarf paradigm for '{sarf_verb_target}'! Auto-saved to study database 💾")
-                                            except Exception as e:
-                                                st.error(f"Sarf generation failed: {e}")
+                                st.session_state.last_analyzed_noun = ""
+                                # Persist cropped image & collapse step 1
+                                st.session_state.cropped_img = cropped_img
+                                st.session_state.cropper_collapsed = True
+                                st.rerun()
+                        else:
+                            # Option 2: Full Gemini Vision
+                            gemini_res = gemini_vision_ocr_tashkeel(cropped_img)
+                            diacritized_text = gemini_res.get("tashkeel_text", "")
+                            full_trans = gemini_res.get("full_translation", "")
+                            verbs_list = gemini_res.get("verbs", [])
+                            nouns_list = gemini_res.get("nouns", [])
+                            particles_list = gemini_res.get("particles", [])
+                            if not diacritized_text.strip():
+                                st.error("Gemini Vision was unable to read any text from the cropped area. Please try a different area.")
+                                st.session_state.extracted_text = ""
+                                st.session_state.diacritized_text = ""
+                                st.session_state.full_translation = ""
+                                st.session_state.processed_by = ""
+                                st.session_state.verbs = []
+                                st.session_state.nouns = []
+                                st.session_state.particles = []
+                                st.session_state.sarf_results = None
+                                st.session_state.sarf_word = ""
+                                st.session_state.verb_results = None
+                                st.session_state.last_analyzed_verb = ""
+                                st.session_state.noun_results = None
+                                st.session_state.last_analyzed_noun = ""
                             else:
-                                if st.button("Analyze Noun via Gemini", key="btn_analyze_noun", disabled=(not api_key)):
+                                # Strip diacritics to get raw extracted text
+                                extracted_text = strip_tashkeel(diacritized_text)
+                                st.session_state.extracted_text = extracted_text
+                                st.session_state.diacritized_text = diacritized_text
+                                st.session_state.full_translation = full_trans
+                                st.session_state.processed_by = ocr_mode
+                                st.session_state.verbs = verbs_list
+                                st.session_state.nouns = nouns_list
+                                st.session_state.particles = particles_list
+                                st.session_state.sarf_results = None
+                                st.session_state.sarf_word = ""
+                                st.session_state.verb_results = None
+                                st.session_state.last_analyzed_verb = ""
+                                st.session_state.noun_results = None
+                                st.session_state.last_analyzed_noun = ""
+                                # Persist cropped image & collapse step 1
+                                st.session_state.cropped_img = cropped_img
+                                st.session_state.cropper_collapsed = True
+                                st.rerun()
+                    except Exception as e:
+                        st.error(f"Processing failed: {e}")
+        # For results, use the live crop if available; else fall back to the last saved one
+        display_cropped_img = cropped_img or st.session_state.cropped_img
+        # Render results if we have diacritized text in session state
+        if st.session_state.diacritized_text:
+            extracted_text = st.session_state.extracted_text
+            diacritized_text = st.session_state.diacritized_text
+            # Top Toolbar: Centered Action Buttons
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                if st.button("📄 Raw Text", key="btn_open_raw_modal", icon=":material/description:", use_container_width=True):
+                    show_raw_text_modal()
+            with col_m2:
+                if st.button("✨ Diacritized Text", key="btn_open_diacritized_modal", icon=":material/edit_note:", use_container_width=True):
+                    show_diacritized_text_modal()
+            st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
+            # ── Captured image above results ──
+            if display_cropped_img:
+                import base64 as _b64
+                from io import BytesIO as _BytesIO
+                _buf = _BytesIO()
+                display_cropped_img.save(_buf, format="PNG")
+                _img_str = _b64.b64encode(_buf.getvalue()).decode()
+                st.markdown(f"""
+                <div style="padding:25px;border:1px solid rgba(128,128,128,0.25);border-radius:10px;margin-bottom:1rem;">
+                    <img src="data:image/png;base64,{_img_str}" style="width:100%;height:auto;display:block;border-radius:6px;">
+                    <div style="text-align:center;font-size:0.82rem;margin-top:10px;opacity:0.6;">✨ Captured Image</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with st.container(border=True):
+                col_thdr, col_ttog = st.columns([2, 1], vertical_alignment="center")
+                with col_thdr:
+                    st.markdown("#### ✨ Tashkeel Text")
+                with col_ttog:
+                    show_vowels = st.toggle("Vowels", value=True, key="main_vowel_toggle")
+                v_html, nv_html, sentence_tokens = build_interactive_tashkeel_html(
+                    diacritized_text,
+                    json.dumps(st.session_state.verbs),
+                    json.dumps(st.session_state.nouns),
+                    json.dumps(st.session_state.particles),
+                )
+                st.markdown(f'<div dir="rtl" class="arabic-text tashkeeled" id="tashkeel-container-main">{v_html}</div>', unsafe_allow_html=True)
+                st.components.v1.html(f"""
+                <script>
+                (function() {{
+                    var SHOW_VOWELS = {str(show_vowels).lower()};
+                    var container = window.parent.document.getElementById('tashkeel-container-main');
+                    if (!container) return;
+                    var spans = container.querySelectorAll('.tashkeel-word');
+                    for (var i = 0; i < spans.length; i++) {{
+                        var span = spans[i];
+                        span.textContent = span.getAttribute('data-vowel') || span.textContent;
+                        span.style.minWidth = span.getBoundingClientRect().width + 'px';
+                        if (!SHOW_VOWELS) {{
+                            span.textContent = span.getAttribute('data-novowel') || span.textContent;
+                        }}
+                    }}
+                }})();
+                </script>
+                """, height=0)
+                render_arabic_tts(diacritized_text, tts_engine_choice, key_suffix="full_sentence")
+                st.components.v1.html("""
+                <script>
+                (function() {
+                    try {
+                        var pDoc = window.parent.document;
+                        var pWin = window.parent;
+                        var existingTip = pDoc.getElementById('global-tashkeel-tooltip');
+                        if (existingTip) existingTip.remove();
+                        var tip = pDoc.createElement('div');
+                        tip.id = 'global-tashkeel-tooltip';
+                        tip.style.cssText = 'position: absolute; background-color: #0f172a; color: #ffffff; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-family: system-ui, -apple-system, sans-serif; font-weight: 500; z-index: 999999; pointer-events: none; white-space: normal; max-width: 280px; word-wrap: break-word; display: none; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); text-align: center; line-height: 1.4; transition: opacity 0.15s ease; opacity: 0;';
+                        pDoc.body.appendChild(tip);
+                        function showTip(span) {
+                            var tipText = span.getAttribute('data-tooltip') || span.getAttribute('title');
+                            if (!tipText) return;
+                            tip.textContent = tipText;
+                            tip.style.display = 'block';
+                            tip.style.opacity = '1';
+                            var rect = span.getBoundingClientRect();
+                            var scrollTop = pWin.pageYOffset || pDoc.documentElement.scrollTop;
+                            var scrollLeft = pWin.pageXOffset || pDoc.documentElement.scrollLeft;
+                            var tipW = tip.offsetWidth;
+                            var tipH = tip.offsetHeight;
+                            var screenW = pDoc.documentElement.clientWidth;
+                            var top = rect.top + scrollTop - tipH - 8;
+                            if (top < scrollTop) {
+                                top = rect.bottom + scrollTop + 8;
+                            }
+                            var left = rect.left + scrollLeft + (rect.width / 2) - (tipW / 2);
+                            left = Math.max(12, Math.min(left, screenW - tipW - 12));
+                            tip.style.top = top + 'px';
+                            tip.style.left = left + 'px';
+                            pWin.clearTimeout(pWin._tashkeelTipTimer);
+                            pWin._tashkeelTipTimer = pWin.setTimeout(function() {
+                                tip.style.opacity = '0';
+                                pWin.setTimeout(function() { if (tip.style.opacity === '0') tip.style.display = 'none'; }, 150);
+                            }, 3500);
+                        }
+                        function hideTip() {
+                            if (tip) {
+                                tip.style.opacity = '0';
+                                pWin.setTimeout(function() { if (tip.style.opacity === '0') tip.style.display = 'none'; }, 150);
+                            }
+                        }
+                        if (pWin._tashkeelHandler) {
+                            pDoc.removeEventListener('click', pWin._tashkeelHandler, true);
+                            pDoc.removeEventListener('touchend', pWin._tashkeelHandler, true);
+                        }
+                        pWin._tashkeelHandler = function(e) {
+                            var span = e.target.closest('.tashkeel-word');
+                            if (span) {
+                                showTip(span);
+                            } else {
+                                hideTip();
+                            }
+                        };
+                        pDoc.addEventListener('click', pWin._tashkeelHandler, true);
+                        pDoc.addEventListener('touchend', pWin._tashkeelHandler, true);
+                    } catch(err) {
+                        console.error(err);
+                    }
+                })();
+                </script>
+                """, height=0)
+            st.markdown("### English Translation")
+            if st.session_state.full_translation:
+                st.success(st.session_state.full_translation)
+            else:
+                try:
+                    translated_text = GoogleTranslator(source='ar', target='en').translate(diacritized_text)
+                    st.success(translated_text)
+                except Exception as e:
+                    st.warning(f"Translation failed: {e}")
+            # Interactive Word Lookup Reader
+            st.markdown("---")
+            st.markdown("### 👆 Interactive Word Lookup (Click or Hover)")
+            st.caption("Click any word in the sentence below to view its instant contextual translation, grammar role, and root.")
+            selected_word = st.pills(
+                "Select a word from the diacritized sentence:",
+                options=sentence_tokens,
+                selection_mode="single",
+                key="interactive_sentence_pills"
+            )
+            if selected_word:
+                raw_selected = strip_tashkeel(selected_word)
+                info = word_map.get(selected_word) or word_map.get(raw_selected)
+                # 1. Grab Gemini's root from lookup object
+                gemini_root = info.get("root") if info else None
+                if gemini_root and gemini_root != "N/A":
+                    # Formats Gemini's "ب-س-م" cleanly to "ب - س - م"
+                    root_display = " - ".join(gemini_root.replace("-", " ").split())
+                else:
+                    # 2. Fallback to Farasa ONLY if Gemini didn't return a root
+                    try:
+                        stemmed = farasa_stemmer.stem(selected_word)
+                        clean_root = re.sub(r'[^\u0621-\u064A]', '', stemmed)
+                        root_display = " - ".join(list(clean_root)) if clean_root else "N/A"
+                    except Exception:
+                        root_display = "N/A"
+                # 3. Always render the card container (OUTSIDE the if/else block)
+                with st.container(border=True):
+                    col_w1, col_w2 = st.columns([1, 2])
+                    with col_w1:
+                        st.markdown(f"""
+                        <div dir="rtl" class="arabic-text arabic-large" style="color: #1E88E5; font-weight: bold; padding: 12px; border-radius: 6px; background-color: rgba(30, 136, 229, 0.08); text-align: center; margin-bottom: 8px;">
+                            {selected_word}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        # Word Audio Player Controls
+                        if "Microsoft Edge" in tts_engine_choice:
+                            if st.button("🔊 Pronounce Word", key=f"btn_word_edge_{selected_word}"):
+                                try:
+                                    w_audio = generate_edge_audio(selected_word)
+                                    st.audio(w_audio, format="audio/mp3", autoplay=True)
+                                except Exception as e:
+                                    st.error(f"TTS Error: {e}")
+                        elif "Google Voice" in tts_engine_choice:
+                            if st.button("🔊 Pronounce Word", key=f"btn_word_gtts_{selected_word}"):
+                                try:
+                                    w_audio = generate_gtts_audio(selected_word)
+                                    st.audio(w_audio, format="audio/mp3", autoplay=True)
+                                except Exception as e:
+                                    st.error(f"TTS Error: {e}")
+                        else:
+                            esc_w = selected_word.replace("'", "\\'").replace('"', '\\"')
+                            html_word = f"""
+                            <button onclick="speakWord('{esc_w}')" style="background:#1E88E5; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; width:100%;">
+                                ⚡ 🔊 Pronounce Word
+                            </button>
+                            <script>
+                            function speakWord(w) {{
+                                if ('speechSynthesis' in window) {{
+                                    window.speechSynthesis.cancel();
+                                    const msg = new SpeechSynthesisUtterance(w);
+                                    msg.lang = 'ar-SA';
+                                    msg.rate = 0.8;
+                                    const voices = window.speechSynthesis.getVoices();
+                                    const v = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('ar'));
+                                    if (v) msg.voice = v;
+                                    window.speechSynthesis.speak(msg);
+                                }}
+                            }}
+                            </script>
+                            """
+                            components.html(html_word, height=40)
+                    with col_w2:
+                        if info:
+                            sub_type_val = info.get('sub_type', 'Noun')
+                            derived_val = info.get('derived', False)
+                            base_verb_val = info.get('base_verb')
+                            root_val = info.get('root') or root_display
+                            st.markdown(f"**💡 Contextual Meaning:** {info.get('meaning', 'N/A')}")
+                            st.markdown(f"**🏷️ Category / Role:** {info.get('role', 'Unknown')}")
+                            st.markdown(f"**🏷️ Morphological Type:** {render_sub_type_badge(sub_type_val, derived_val, base_verb_val)}", unsafe_allow_html=True)
+                            if info.get('effect'):
+                                st.markdown(f"**⚡ Grammatical Effect:** {info.get('effect')}")
+                            can_generate_sarf = derived_val or sub_type_val == 'Verb' or (base_verb_val is not None) or (root_val is not None)
+                            if can_generate_sarf:
+                                sarf_target_verb = base_verb_val if base_verb_val else selected_word
+                                if st.button(f"⚡ Generate Sarf for '{sarf_target_verb}'", key=f"btn_card_sarf_{selected_word}"):
+                                    with st.spinner(f"Generating Sarf paradigm for base verb '{sarf_target_verb}'..."):
+                                        try:
+                                            target_r = root_val if root_val else root_display
+                                            s_data = get_verb_analysis(sarf_target_verb, target_r)
+                                            st.session_state.verb_results = s_data
+                                            st.session_state.last_analyzed_verb = sarf_target_verb
+                                            auto_save_or_update_current_entry(
+                                                selected_file_name, display_cropped_img, diacritized_text,
+                                                st.session_state.full_translation, st.session_state.verbs,
+                                                st.session_state.nouns, st.session_state.particles,
+                                                st.session_state.verb_results, st.session_state.last_analyzed_verb,
+                                                st.session_state.noun_results, st.session_state.last_analyzed_noun
+                                            )
+                                            st.success(f"Generated Sarf paradigm for '{sarf_target_verb}'! Auto-saved to study database 💾")
+                                        except Exception as e:
+                                            st.error(f"Sarf generation failed: {e}")
+                        else:
+                            try:
+                                quick_trans = GoogleTranslator(source='ar', target='en').translate(selected_word)
+                            except Exception:
+                                quick_trans = "N/A"
+                            st.markdown(f"**💡 Contextual Meaning:** {quick_trans}")
+                            st.markdown("**🏷️ Category / Role:** Unclassified Word")
+                        if root_display and root_display != "N/A":
+                            st.markdown(f"**🌱 Extracted Root:** `{root_display}`")
+            # Morphological and sarf analysis section
+            st.markdown("---")
+            with st.container(border=True):
+                st.subheader("Morphological and sarf analysis")
+                detected_verbs = st.session_state.verbs
+                detected_nouns = st.session_state.nouns
+                detected_particles = st.session_state.particles
+                # Setup tabs for all 3 pillars of Arabic grammar
+                tab1, tab2, tab3 = st.tabs(["⚙️ Verbs (فِعْل)", "🏷️ Nouns (اسْم)", "📌 Particles (حُرُوف)"])
+                with tab1:
+                    st.subheader("Verb Analysis")
+                    # Populate verb selectbox with fallback to custom input
+                    if detected_verbs:
+                        verb_options = []
+                        verb_word_map = {}
+                        for v in detected_verbs:
+                            if isinstance(v, dict):
+                                w = v.get("word", "")
+                                m = v.get("meaning", "")
+                            elif hasattr(v, 'word'):
+                                w = getattr(v, 'word', "")
+                                m = getattr(v, 'meaning', "")
+                            else:
+                                w = str(v)
+                                m = ""
+                            disp = f"{w} ({m})" if m else w
+                            verb_options.append(disp)
+                            verb_word_map[disp] = w
+                        selected_verb_disp = st.selectbox(
+                            "Select a word to analyze as a Verb",
+                            options=verb_options,
+                            key="verb_select"
+                        )
+                        custom_verb = st.text_input("Or type a custom Arabic verb to analyze", key="verb_custom")
+                        verb_to_analyze = custom_verb.strip() if custom_verb.strip() else verb_word_map.get(selected_verb_disp, selected_verb_disp)
+                    else:
+                        st.info("No verbs detected in this crop. You can enter one manually below.")
+                        verb_to_analyze = st.text_input("Type an Arabic verb to analyze", key="verb_custom_only")
+                    if verb_to_analyze:
+                        # 1. Run local Farasa Stemmer first to get the root
+                        try:
+                            stemmed_verb = farasa_stemmer.stem(verb_to_analyze)
+                            clean_verb_root = re.sub(r'[^\u0621-\u064A]', '', stemmed_verb)
+                            verb_root_display = " - ".join(list(clean_verb_root))
+                        except Exception as e:
+                            st.error(f"Farasa Stemmer Error: {e}")
+                            clean_verb_root = verb_to_analyze
+                            verb_root_display = "Unknown"
+                        try:
+                            verb_trans = GoogleTranslator(source='ar', target='en').translate(verb_to_analyze)
+                            verb_root_trans = GoogleTranslator(source='ar', target='en').translate(clean_verb_root)
+                        except Exception:
+                            verb_trans = "N/A"
+                            verb_root_trans = "N/A"
+                        st.markdown(f"""
+                        <div style="font-size: 18px; margin-bottom: 10px;">
+                            Analyzing verb: <span class="arabic-text arabic-medium" style="font-weight: bold; color: #1E88E5;">{verb_to_analyze}</span> (Translation: <em>{verb_trans}</em>)
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.info(f"🌱 Extracted Local Root: {verb_root_display} (Translation: {verb_root_trans})")
+                        # Clear results if the verb changes
+                        if st.session_state.last_analyzed_verb != verb_to_analyze:
+                            st.session_state.verb_results = None
+                        api_key = get_gemini_api_key()
+                        if not api_key:
+                            st.warning("⚠️ Gemini API key is missing. Please configure it to enable Verb analysis.")
+                        if st.button("Analyze Verb via Gemini", key="btn_analyze_verb", disabled=(not api_key)):
+                            with st.spinner("Analyzing verb paradigm..."):
+                                try:
+                                    verb_data = get_verb_analysis(verb_to_analyze, clean_verb_root)
+                                    st.session_state.verb_results = verb_data
+                                    st.session_state.last_analyzed_verb = verb_to_analyze
+                                    auto_save_or_update_current_entry(
+                                        selected_file_name, display_cropped_img, diacritized_text,
+                                        st.session_state.full_translation, st.session_state.verbs,
+                                        st.session_state.nouns, st.session_state.particles,
+                                        st.session_state.verb_results, st.session_state.last_analyzed_verb,
+                                        st.session_state.noun_results, st.session_state.last_analyzed_noun
+                                    )
+                                    st.toast("Auto-saved Verb Sarf analysis to database! 💾")
+                                except Exception as e:
+                                    st.error(f"Gemini Verb Analysis failed: {e}")
+                                    st.session_state.verb_results = None
+                        # Render results
+                        if st.session_state.verb_results and st.session_state.last_analyzed_verb == verb_to_analyze:
+                            v_data = st.session_state.verb_results
+                            # Layout metrics
+                            col_v1, col_v2, col_v3 = st.columns(3)
+                            with col_v1:
+                                st.metric(label="Pattern / Form (الوزن)", value=v_data.get('wazn', 'N/A'))
+                            with col_v2:
+                                st.metric(label="Past Tense (الماضي)", value=v_data.get('madi', 'N/A'))
+                            with col_v3:
+                                st.metric(label="Present Tense (المضارع)", value=v_data.get('mudari', 'N/A'))
+                            st.markdown("#### Morphological paradigm table")
+                            words_to_translate = [
+                                v_data.get('madi', ''),
+                                v_data.get('mudari', ''),
+                                v_data.get('amr', ''),
+                                v_data.get('masdar', ''),
+                                v_data.get('ism_faail', ''),
+                                v_data.get('ism_mafool', '')
+                            ]
+                            translations = translate_words(words_to_translate)
+                            verb_df = pd.DataFrame({
+                                "Grammatical Element": [
+                                    "Pattern / Form (الوزن)",
+                                    "Past Tense (الْمَاضِي)",
+                                    "Present Tense (الْمُضَارِع)",
+                                    "Imperative Form (الأَمْر)",
+                                    "Verbal Noun (الْمَصْدَر)",
+                                    "Active Participle (اسْم الْفَاعِل)",
+                                    "Passive Participle (اسْم الْمَفْعُول)"
+                                ],
+                                "Arabic Word (with Tashkeel)": [
+                                    v_data.get('wazn', 'N/A'),
+                                    v_data.get('madi', 'N/A'),
+                                    v_data.get('mudari', 'N/A'),
+                                    v_data.get('amr', 'N/A'),
+                                    v_data.get('masdar', 'N/A'),
+                                    v_data.get('ism_faail', 'N/A'),
+                                    v_data.get('ism_mafool', 'N/A')
+                                ],
+                                "English Translation": [
+                                    "N/A",
+                                    translations[0],
+                                    translations[1],
+                                    translations[2],
+                                    translations[3],
+                                    translations[4],
+                                    translations[5]
+                                ]
+                            })
+                            render_custom_table(verb_df)
+                with tab2:
+                    st.subheader("Noun Analysis")
+                    word_map = build_word_meaning_map(detected_verbs, detected_nouns, detected_particles)
+                    # Populate noun selectbox with fallback to custom input
+                    if detected_nouns:
+                        noun_options = []
+                        noun_word_map = {}
+                        for n in detected_nouns:
+                            if isinstance(n, dict):
+                                w = n.get("word", "")
+                                m = n.get("meaning", "")
+                            elif hasattr(n, 'word'):
+                                w = getattr(n, 'word', "")
+                                m = getattr(n, 'meaning', "")
+                            else:
+                                w = str(n)
+                                m = ""
+                            disp = f"{w} ({m})" if m else w
+                            noun_options.append(disp)
+                            noun_word_map[disp] = w
+                        selected_noun_disp = st.selectbox(
+                            "Select a word to analyze as a Noun",
+                            options=noun_options,
+                            key="noun_select"
+                        )
+                        custom_noun = st.text_input("Or type a custom Arabic noun to analyze", key="noun_custom")
+                        noun_to_analyze = custom_noun.strip() if custom_noun.strip() else noun_word_map.get(selected_noun_disp, selected_noun_disp)
+                    else:
+                        st.info("No nouns detected in this crop. You can enter one manually below.")
+                        noun_to_analyze = st.text_input("Type an Arabic noun to analyze", key="noun_custom_only")
+                    if noun_to_analyze:
+                        # 1. Run local Farasa Stemmer first to get the root
+                        try:
+                            stemmed_noun = farasa_stemmer.stem(noun_to_analyze)
+                            clean_noun_root = re.sub(r'[^\u0621-\u064A]', '', stemmed_noun)
+                            noun_root_display = " - ".join(list(clean_noun_root))
+                        except Exception as e:
+                            st.error(f"Farasa Stemmer Error: {e}")
+                            clean_noun_root = noun_to_analyze
+                            noun_root_display = "Unknown"
+                        # Look up noun metadata in word_map
+                        sel_noun_obj = word_map.get(noun_to_analyze) or word_map.get(strip_tashkeel(noun_to_analyze)) or {}
+                        n_derived = sel_noun_obj.get("derived", False)
+                        n_sub_type = sel_noun_obj.get("sub_type", "Solid Noun")
+                        n_base_verb = sel_noun_obj.get("base_verb")
+                        n_root = sel_noun_obj.get("root") or clean_noun_root
+                        try:
+                            noun_trans = GoogleTranslator(source='ar', target='en').translate(noun_to_analyze)
+                            noun_root_trans = GoogleTranslator(source='ar', target='en').translate(clean_noun_root)
+                        except Exception:
+                            noun_trans = "N/A"
+                            noun_root_trans = "N/A"
+                        st.markdown(f"""
+                        <div style="font-size: 18px; margin-bottom: 10px;">
+                            Analyzing noun: <span class="arabic-text arabic-medium" style="font-weight: bold; color: #1E88E5;">{noun_to_analyze}</span> (Translation: <em>{noun_trans}</em>) {render_sub_type_badge(n_sub_type, n_derived, n_base_verb)}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.info(f"🌱 Extracted Local Root: {noun_root_display} (Translation: {noun_root_trans})")
+                        # Clear results if the noun changes
+                        if st.session_state.last_analyzed_noun != noun_to_analyze:
+                            st.session_state.noun_results = None
+                        api_key = get_gemini_api_key()
+                        if not api_key:
+                            st.warning("⚠️ Gemini API key is missing. Please configure it to enable Noun analysis.")
+                        # NEW LOGIC: Render Sarf button ADJACENT to Noun Analysis if derived == True or base_verb is present
+                        is_noun_derived = n_derived or (n_sub_type in ["Ism Fa'il", "Ism Maf'ul", "Masdar", "Sifah Mushabbahah", "Verb"]) or (n_base_verb is not None)
+                        if is_noun_derived:
+                            col_nbtn1, col_nbtn2 = st.columns(2)
+                            with col_nbtn1:
+                                if st.button("Analyze Noun via Gemini", key="btn_analyze_noun", disabled=(not api_key), use_container_width=True):
                                     with st.spinner("Analyzing noun forms..."):
                                         try:
                                             noun_data = get_noun_analysis(noun_to_analyze, clean_noun_root)
@@ -2302,169 +2230,229 @@ if nav_page == "📖 Diacritizer & Analyzer":
                                         except Exception as e:
                                             st.error(f"Gemini Noun Analysis failed: {e}")
                                             st.session_state.noun_results = None
-                                    
-                            # Render results
-                            if st.session_state.noun_results and st.session_state.last_analyzed_noun == noun_to_analyze:
-                                n_data = st.session_state.noun_results
-                            
-                                # Layout metrics
-                                col_n1, col_n2, col_n3 = st.columns(3)
-                                with col_n1:
-                                    st.metric(label="Classification (النوع)", value=n_data.get('noun_type', 'N/A'))
-                                with col_n2:
-                                    st.metric(label="Category (الفئة)", value=n_data.get('category', 'N/A'))
-                                with col_n3:
-                                    st.metric(label="Pattern / Weight (الوزن)", value=n_data.get('wazn', 'N/A'))
-                                 
-                                st.markdown("#### Noun paradigm table")
-                                words_to_translate = [
-                                    n_data.get('singular', ''),
-                                    n_data.get('dual', ''),
-                                    n_data.get('plural', ''),
-                                    n_data.get('root_verb', '')
-                                ]
-                                translations = translate_words(words_to_translate)
-                            
-                                noun_df = pd.DataFrame({
-                                    "Grammatical Element": [
-                                        "Classification (النوع)",
-                                        "Category (الفئة)",
-                                        "Singular Form (المُفْرَد)",
-                                        "Dual Form (المُثَنَّى)",
-                                        "Plural Form (الجَمْع)",
-                                        "Associated Root Verb (الفعل الأصلي)"
-                                    ],
-                                    "Arabic Word (with Tashkeel)": [
-                                        n_data.get('noun_type', 'N/A'),
-                                        n_data.get('category', 'N/A'),
-                                        n_data.get('singular', 'N/A'),
-                                        n_data.get('dual', 'N/A'),
-                                        n_data.get('plural', 'N/A'),
-                                        n_data.get('root_verb', 'N/A')
-                                    ],
-                                    "English Translation": [
-                                        "N/A",
-                                        "N/A",
-                                        translations[0],
-                                        translations[1],
-                                        translations[2],
-                                        translations[3]
-                                    ]
-                                })
-                                render_custom_table(noun_df)
-
-                            # Render Verb Sarf paradigm independently if generated for this derived noun
-                            if st.session_state.get('verb_results'):
-                                v_data = st.session_state.verb_results
-                                sarf_title_verb = st.session_state.get('last_analyzed_verb', 'Base Verb')
-                                st.markdown("---")
-                                st.markdown(f"#### ⚡ Verbal Sarf Paradigm for Base Verb `{sarf_title_verb}`")
-                                col_v1, col_v2, col_v3 = st.columns(3)
-                                with col_v1:
-                                    st.metric(label="Pattern / Form (الوزن)", value=v_data.get('wazn', 'N/A'))
-                                with col_v2:
-                                    st.metric(label="Past Tense (الماضي)", value=v_data.get('madi', 'N/A'))
-                                with col_v3:
-                                    st.metric(label="Present Tense (المضارع)", value=v_data.get('mudari', 'N/A'))
-
-                                words_to_translate = [
-                                    v_data.get('madi', ''),
-                                    v_data.get('mudari', ''),
-                                    v_data.get('amr', ''),
-                                    v_data.get('masdar', ''),
-                                    v_data.get('ism_faail', ''),
-                                    v_data.get('ism_mafool', '')
-                                ]
-                                translations = translate_words(words_to_translate)
-
-                                verb_df = pd.DataFrame({
-                                    "Grammatical Element": [
-                                        "Pattern / Form (الوزن)",
-                                        "Past Tense (الْمَاضِي)",
-                                        "Present Tense (الْمُضَارِع)",
-                                        "Imperative Form (الأَمْر)",
-                                        "Verbal Noun (الْمَصْدَر)",
-                                        "Active Participle (اسْم الْفَاعِل)",
-                                        "Passive Participle (اسْم الْمَفْعُول)"
-                                    ],
-                                    "Arabic Word (with Tashkeel)": [
-                                        v_data.get('wazn', 'N/A'),
-                                        v_data.get('madi', 'N/A'),
-                                        v_data.get('mudari', 'N/A'),
-                                        v_data.get('amr', 'N/A'),
-                                        v_data.get('masdar', 'N/A'),
-                                        v_data.get('ism_faail', 'N/A'),
-                                        v_data.get('ism_mafool', 'N/A')
-                                    ],
-                                    "English Translation": [
-                                        "N/A",
-                                        translations[0],
-                                        translations[1],
-                                        translations[2],
-                                        translations[3],
-                                        translations[4],
-                                        translations[5]
-                                    ]
-                                })
-                                render_custom_table(verb_df)
-                            
-                    with tab3:
-                        st.subheader("Particle Analysis (الأَدَوَات وَالْحُرُوف)")
-                        st.markdown("Particles (حُرُوف) do not have 3-letter roots. Below are the grammatical categories, contextual meanings, and grammatical effects of all particles detected in this text.")
-                    
-                        if detected_particles:
-                            particle_rows = []
-                            for p in detected_particles:
-                                if isinstance(p, dict):
-                                    p_item = p
-                                elif hasattr(p, 'model_dump'):
-                                    p_item = p.model_dump()
-                                elif hasattr(p, 'dict'):
-                                    p_item = p.dict()
-                                else:
-                                    p_item = dict(p)
-                                
-                                particle_rows.append({
-                                    "Particle (الْحَرْف)": p_item.get("word") or p_item.get("particle", "N/A"),
-                                    "Category (النَّوْع)": p_item.get("type", "N/A"),
-                                    "Meaning (الْمَعْنَى)": p_item.get("meaning", "N/A"),
-                                    "Grammatical Effect (الأَثَر الإِعْرَابِي)": p_item.get("effect", "N/A")
-                                })
-                            
-                            p_df = pd.DataFrame(particle_rows)
-                            render_custom_table(p_df)
+                            with col_nbtn2:
+                                sarf_verb_target = n_base_verb if n_base_verb else noun_to_analyze
+                                if st.button(f"⚡ Generate Sarf for '{sarf_verb_target}'", key="btn_analyze_noun_sarf", disabled=(not api_key), use_container_width=True):
+                                    with st.spinner(f"Generating Sarf paradigm for base verb '{sarf_verb_target}'..."):
+                                        try:
+                                            verb_data = get_verb_analysis(sarf_verb_target, n_root)
+                                            st.session_state.verb_results = verb_data
+                                            st.session_state.last_analyzed_verb = sarf_verb_target
+                                            auto_save_or_update_current_entry(
+                                                selected_file_name, display_cropped_img, diacritized_text,
+                                                st.session_state.full_translation, st.session_state.verbs,
+                                                st.session_state.nouns, st.session_state.particles,
+                                                st.session_state.verb_results, st.session_state.last_analyzed_verb,
+                                                st.session_state.noun_results, st.session_state.last_analyzed_noun
+                                            )
+                                            st.success(f"Generated Sarf paradigm for '{sarf_verb_target}'! Auto-saved to study database 💾")
+                                        except Exception as e:
+                                            st.error(f"Sarf generation failed: {e}")
                         else:
-                            st.info("No particles detected in the current text crop. Try processing a text passage containing prepositions (حُرُوف الْجَرّ) or conjunctions (حُرُوف الْعَطْف).")
+                            if st.button("Analyze Noun via Gemini", key="btn_analyze_noun", disabled=(not api_key)):
+                                with st.spinner("Analyzing noun forms..."):
+                                    try:
+                                        noun_data = get_noun_analysis(noun_to_analyze, clean_noun_root)
+                                        st.session_state.noun_results = noun_data
+                                        st.session_state.last_analyzed_noun = noun_to_analyze
+                                        auto_save_or_update_current_entry(
+                                            selected_file_name, display_cropped_img, diacritized_text,
+                                            st.session_state.full_translation, st.session_state.verbs,
+                                            st.session_state.nouns, st.session_state.particles,
+                                            st.session_state.verb_results, st.session_state.last_analyzed_verb,
+                                            st.session_state.noun_results, st.session_state.last_analyzed_noun
+                                        )
+                                        st.toast("Auto-saved Noun analysis to database! 💾")
+                                    except Exception as e:
+                                        st.error(f"Gemini Noun Analysis failed: {e}")
+                                        st.session_state.noun_results = None
+                        # Render results
+                        if st.session_state.noun_results and st.session_state.last_analyzed_noun == noun_to_analyze:
+                            n_data = st.session_state.noun_results
+                            # Layout metrics
+                            col_n1, col_n2, col_n3 = st.columns(3)
+                            with col_n1:
+                                st.metric(label="Classification (النوع)", value=n_data.get('noun_type', 'N/A'))
+                            with col_n2:
+                                st.metric(label="Category (الفئة)", value=n_data.get('category', 'N/A'))
+                            with col_n3:
+                                st.metric(label="Pattern / Weight (الوزن)", value=n_data.get('wazn', 'N/A'))
+                            st.markdown("#### Noun paradigm table")
+                            words_to_translate = [
+                                n_data.get('singular', ''),
+                                n_data.get('dual', ''),
+                                n_data.get('plural', ''),
+                                n_data.get('root_verb', '')
+                            ]
+                            translations = translate_words(words_to_translate)
+                            noun_df = pd.DataFrame({
+                                "Grammatical Element": [
+                                    "Classification (النوع)",
+                                    "Category (الفئة)",
+                                    "Singular Form (المُفْرَد)",
+                                    "Dual Form (المُثَنَّى)",
+                                    "Plural Form (الجَمْع)",
+                                    "Associated Root Verb (الفعل الأصلي)"
+                                ],
+                                "Arabic Word (with Tashkeel)": [
+                                    n_data.get('noun_type', 'N/A'),
+                                    n_data.get('category', 'N/A'),
+                                    n_data.get('singular', 'N/A'),
+                                    n_data.get('dual', 'N/A'),
+                                    n_data.get('plural', 'N/A'),
+                                    n_data.get('root_verb', 'N/A')
+                                ],
+                                "English Translation": [
+                                    "N/A",
+                                    "N/A",
+                                    translations[0],
+                                    translations[1],
+                                    translations[2],
+                                    translations[3]
+                                ]
+                            })
+                            render_custom_table(noun_df)
+                        # Render Verb Sarf paradigm independently if generated for this derived noun
+                        if st.session_state.get('verb_results'):
+                            v_data = st.session_state.verb_results
+                            sarf_title_verb = st.session_state.get('last_analyzed_verb', 'Base Verb')
+                            st.markdown("---")
+                            st.markdown(f"#### ⚡ Verbal Sarf Paradigm for Base Verb `{sarf_title_verb}`")
+                            col_v1, col_v2, col_v3 = st.columns(3)
+                            with col_v1:
+                                st.metric(label="Pattern / Form (الوزن)", value=v_data.get('wazn', 'N/A'))
+                            with col_v2:
+                                st.metric(label="Past Tense (الماضي)", value=v_data.get('madi', 'N/A'))
+                            with col_v3:
+                                st.metric(label="Present Tense (المضارع)", value=v_data.get('mudari', 'N/A'))
+                            words_to_translate = [
+                                v_data.get('madi', ''),
+                                v_data.get('mudari', ''),
+                                v_data.get('amr', ''),
+                                v_data.get('masdar', ''),
+                                v_data.get('ism_faail', ''),
+                                v_data.get('ism_mafool', '')
+                            ]
+                            translations = translate_words(words_to_translate)
+                            verb_df = pd.DataFrame({
+                                "Grammatical Element": [
+                                    "Pattern / Form (الوزن)",
+                                    "Past Tense (الْمَاضِي)",
+                                    "Present Tense (الْمُضَارِع)",
+                                    "Imperative Form (الأَمْر)",
+                                    "Verbal Noun (الْمَصْدَر)",
+                                    "Active Participle (اسْم الْفَاعِل)",
+                                    "Passive Participle (اسْم الْمَفْعُول)"
+                                ],
+                                "Arabic Word (with Tashkeel)": [
+                                    v_data.get('wazn', 'N/A'),
+                                    v_data.get('madi', 'N/A'),
+                                    v_data.get('mudari', 'N/A'),
+                                    v_data.get('amr', 'N/A'),
+                                    v_data.get('masdar', 'N/A'),
+                                    v_data.get('ism_faail', 'N/A'),
+                                    v_data.get('ism_mafool', 'N/A')
+                                ],
+                                "English Translation": [
+                                    "N/A",
+                                    translations[0],
+                                    translations[1],
+                                    translations[2],
+                                    translations[3],
+                                    translations[4],
+                                    translations[5]
+                                ]
+                            })
+                            render_custom_table(verb_df)
+                with tab3:
+                    st.subheader("Particle Analysis (الأَدَوَات وَالْحُرُوف)")
+                    st.markdown("Particles (حُرُوف) do not have 3-letter roots. Below are the grammatical categories, contextual meanings, and grammatical effects of all particles detected in this text.")
+                    if detected_particles:
+                        particle_rows = []
+                        for p in detected_particles:
+                            if isinstance(p, dict):
+                                p_item = p
+                            elif hasattr(p, 'model_dump'):
+                                p_item = p.model_dump()
+                            elif hasattr(p, 'dict'):
+                                p_item = p.dict()
+                            else:
+                                p_item = dict(p)
+                            particle_rows.append({
+                                "Particle (الْحَرْف)": p_item.get("word") or p_item.get("particle", "N/A"),
+                                "Category (النَّوْع)": p_item.get("type", "N/A"),
+                                "Meaning (الْمَعْنَى)": p_item.get("meaning", "N/A"),
+                                "Grammatical Effect (الأَثَر الإِعْرَابِي)": p_item.get("effect", "N/A")
+                            })
+                        p_df = pd.DataFrame(particle_rows)
+                        render_custom_table(p_df)
+                    else:
+                        st.info("No particles detected in the current text crop. Try processing a text passage containing prepositions (حُرُوف الْجَرّ) or conjunctions (حُرُوف الْعَطْف).")
+                # Prominent Save to Database Button
+                st.markdown("---")
+                if st.button("💾 Save Entry to Database", type="primary", use_container_width=True):
+                    save_img = display_cropped_img
+                    if diacritized_text:
+                        img_b64 = image_to_base64(save_img) if save_img else ""
+                        deep_sarf = {
+                            "last_verb": st.session_state.last_analyzed_verb,
+                            "verb_sarf": st.session_state.verb_results,
+                            "last_noun": st.session_state.last_analyzed_noun,
+                            "noun_sarf": st.session_state.noun_results
+                        }
+                        source_name = selected_file_name if save_img else "Direct Text Input"
+                        save_study_entry(
+                            source_filename=source_name,
+                            image_base64=img_b64,
+                            tashkeel_text=diacritized_text,
+                            full_translation=st.session_state.full_translation,
+                            verbs=st.session_state.verbs,
+                            nouns=st.session_state.nouns,
+                            particles=st.session_state.particles,
+                            deep_sarf=deep_sarf
+                        )
+                        st.success("Saved entry to study database! 🎉 Switch to the 📚 Saved History page in the sidebar to inspect it anytime.")
+                    else:
+                        st.warning("Please process text first before saving to database.")
+        else:
+            st.info("Please upload one or more manga pages to begin.")
 
-                    # Prominent Save to Database Button
-                    st.markdown("---")
-                    if st.button("💾 Save Entry to Database", type="primary", use_container_width=True):
-                        save_img = display_cropped_img
-                        if save_img and diacritized_text:
-                            img_b64 = image_to_base64(save_img)
-                            deep_sarf = {
-                                "last_verb": st.session_state.last_analyzed_verb,
-                                "verb_sarf": st.session_state.verb_results,
-                                "last_noun": st.session_state.last_analyzed_noun,
-                                "noun_sarf": st.session_state.noun_results
-                            }
-                            save_study_entry(
-                                source_filename=selected_file_name,
-                                image_base64=img_b64,
-                                tashkeel_text=diacritized_text,
-                                full_translation=st.session_state.full_translation,
-                                verbs=st.session_state.verbs,
-                                nouns=st.session_state.nouns,
-                                particles=st.session_state.particles,
-                                deep_sarf=deep_sarf
-                            )
-                            st.success("Saved entry to study database! 🎉 Switch to the 📚 Saved History page in the sidebar to inspect it anytime.")
-                        else:
-                            st.warning("Please process a crop first before saving to database.")
-
-    else:
-        st.info("Please upload one or more manga pages to begin.")
-
+    elif input_mode == "✏️ Input Text":
+        st.markdown("### ✏️ Direct Text Input")
+        st.caption("Paste or type Arabic text directly. It can already have vowels (Tashkeel) or be plain text — we'll process it the same way.")
+        text_input_val = st.text_area("Arabic Text", height=150, placeholder="اكتب أو الصق النص العربي هنا...")
+        text_process_clicked = st.button("⚡ Process & Add Vowels", type="primary", use_container_width=True)
+        
+        if text_process_clicked:
+            if not text_input_val.strip():
+                st.warning("Please enter some Arabic text first.")
+            else:
+                with st.spinner("Processing text and applying Tashkeel..."):
+                    try:
+                        gemini_res = gemini_tashkeel(text_input_val.strip())
+                        diacritized_text = gemini_res.get("tashkeel_text", text_input_val.strip())
+                        full_trans = gemini_res.get("full_translation", "")
+                        verbs_list = gemini_res.get("verbs", [])
+                        nouns_list = gemini_res.get("nouns", [])
+                        particles_list = gemini_res.get("particles", [])
+                        
+                        st.session_state.extracted_text = text_input_val.strip()
+                        st.session_state.diacritized_text = diacritized_text
+                        st.session_state.full_translation = full_trans
+                        st.session_state.processed_by = "Direct Text Input"
+                        st.session_state.verbs = verbs_list
+                        st.session_state.nouns = nouns_list
+                        st.session_state.particles = particles_list
+                        st.session_state.sarf_results = None
+                        st.session_state.sarf_word = ""
+                        st.session_state.verb_results = None
+                        st.session_state.last_analyzed_verb = ""
+                        st.session_state.noun_results = None
+                        st.session_state.last_analyzed_noun = ""
+                        st.session_state.cropped_img = None
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Processing failed: {e}")
 elif nav_page == "📚 Saved Entry Inspector":
     st.title("📚 Saved Entry Inspector")
     
