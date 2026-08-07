@@ -37,6 +37,49 @@ from google.genai import types
 from pydantic import BaseModel, Field
 
 # Database Connection Wrapper & Helper Functions
+class LibsqlCursorWrapper:
+    def __init__(self, client):
+        self.client = client
+        self.lastrowid = None
+        self._rows = []
+
+    def execute(self, sql, params=()):
+        formatted_params = []
+        for p in params:
+            if isinstance(p, (dict, list)):
+                formatted_params.append(json.dumps(p, ensure_ascii=False))
+            else:
+                formatted_params.append(p)
+
+        res = self.client.execute(sql, formatted_params)
+        self.lastrowid = getattr(res, 'last_insert_rowid', None)
+        self._rows = [tuple(r) for r in res.rows] if res.rows else []
+        return self
+
+    def fetchall(self):
+        return self._rows
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+
+class LibsqlConnWrapper:
+    def __init__(self, client):
+        self.client = client
+
+    def cursor(self):
+        return LibsqlCursorWrapper(self.client)
+
+    def commit(self):
+        pass
+
+    def close(self):
+        try:
+            self.client.close()
+        except Exception:
+            pass
+
+
 def get_db_connection():
     """Returns a connection to Turso cloud DB if secrets exist, else falls back to local SQLite."""
     turso_url = os.getenv("TURSO_DATABASE_URL")
@@ -50,9 +93,19 @@ def get_db_connection():
             pass
 
     if turso_url and turso_token:
+        # 1. Try libsql_experimental (native driver)
         try:
             import libsql_experimental as libsql
             return libsql.connect(database=turso_url, auth_token=turso_token)
+        except Exception:
+            pass
+
+        # 2. Try libsql_client (pure-Python HTTP driver - works everywhere without compilation)
+        try:
+            import libsql_client
+            http_url = turso_url.replace("libsql://", "https://")
+            client = libsql_client.create_client_sync(http_url, auth_token=turso_token)
+            return LibsqlConnWrapper(client)
         except Exception as err:
             st.warning(f"Turso connection attempt failed ({err}). Falling back to local SQLite.")
 
