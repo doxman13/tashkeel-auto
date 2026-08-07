@@ -21,7 +21,6 @@ def patched_connect(*args, **kwargs):
 sqlite3.connect = patched_connect
 
 import mishkal.tashkeel
-from farasa.diacratizer import FarasaDiacritizer
 from farasa.stemmer import FarasaStemmer
 from deep_translator import GoogleTranslator
 import arabic_reshaper
@@ -1342,12 +1341,6 @@ def load_mishkal_model():
 
 reader = load_ocr_model()
 mishkal_voweler = load_mishkal_model()
-
-@st.cache_resource
-def load_farasa_model():
-    return FarasaDiacritizer(interactive=True)
-    
-farasa_voweler = load_farasa_model()
 
 @st.cache_resource
 def load_farasa_stemmer():
