@@ -36,10 +36,31 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-# SQLite Database Initialization & Helper Functions
+# Database Connection Wrapper & Helper Functions
+def get_db_connection():
+    """Returns a connection to Turso cloud DB if secrets exist, else falls back to local SQLite."""
+    turso_url = os.getenv("TURSO_DATABASE_URL")
+    turso_token = os.getenv("TURSO_AUTH_TOKEN")
+
+    if not turso_url or not turso_token:
+        try:
+            turso_url = turso_url or st.secrets.get("TURSO_DATABASE_URL")
+            turso_token = turso_token or st.secrets.get("TURSO_AUTH_TOKEN")
+        except Exception:
+            pass
+
+    if turso_url and turso_token:
+        try:
+            import libsql_experimental as libsql
+            return libsql.connect(database=turso_url, auth_token=turso_token)
+        except Exception as err:
+            st.warning(f"Turso connection attempt failed ({err}). Falling back to local SQLite.")
+
+    return sqlite3.connect("arabic_study_history.db", check_same_thread=False)
+
 def init_db():
-    """Initialize SQLite database for storing Arabic study logs."""
-    conn = sqlite3.connect("arabic_study_history.db")
+    """Initialize database for storing Arabic study logs."""
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS study_logs (
@@ -62,8 +83,8 @@ def init_db():
 init_db()
 
 def save_study_entry(source_filename, image_base64, tashkeel_text, full_translation, verbs, nouns, particles, deep_sarf):
-    """Insert a study entry into SQLite database and return new ID."""
-    conn = sqlite3.connect("arabic_study_history.db")
+    """Insert a study entry into database and return new ID."""
+    conn = get_db_connection()
     cursor = conn.cursor()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute("""
@@ -87,8 +108,8 @@ def save_study_entry(source_filename, image_base64, tashkeel_text, full_translat
     return new_id
 
 def update_study_entry_sarf(entry_id: int, deep_sarf: dict):
-    """Update deep_sarf_json for an existing study log entry in SQLite database."""
-    conn = sqlite3.connect("arabic_study_history.db")
+    """Update deep_sarf_json for an existing study log entry in database."""
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE study_logs
@@ -99,7 +120,7 @@ def update_study_entry_sarf(entry_id: int, deep_sarf: dict):
     conn.close()
 
 def auto_save_or_update_current_entry(source_filename, cropped_img, diacritized_text, full_translation, verbs, nouns, particles, verb_results, last_verb, noun_results, last_noun):
-    """Auto-save or update the current study entry in SQLite database whenever Sarf or Noun analysis is generated."""
+    """Auto-save or update the current study entry in database whenever Sarf or Noun analysis is generated."""
     if not diacritized_text:
         return None
         
@@ -113,7 +134,7 @@ def auto_save_or_update_current_entry(source_filename, cropped_img, diacritized_
     
     current_id = st.session_state.get("current_db_entry_id")
     if current_id:
-        conn = sqlite3.connect("arabic_study_history.db")
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE study_logs
@@ -144,8 +165,8 @@ def auto_save_or_update_current_entry(source_filename, cropped_img, diacritized_
         return new_id
 
 def get_all_study_entries():
-    """Retrieve all study entries from SQLite database."""
-    conn = sqlite3.connect("arabic_study_history.db")
+    """Retrieve all study entries from database."""
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT id, timestamp, source_filename, image_base64, tashkeel_text, full_translation, verbs_json, nouns_json, particles_json, deep_sarf_json
@@ -157,8 +178,8 @@ def get_all_study_entries():
     return rows
 
 def delete_study_entry(entry_id: int):
-    """Delete a study log entry by ID from SQLite database."""
-    conn = sqlite3.connect("arabic_study_history.db")
+    """Delete a study log entry by ID from database."""
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM study_logs WHERE id = ?", (entry_id,))
     conn.commit()
@@ -171,27 +192,32 @@ def image_to_base64(pil_img: Image.Image) -> str:
     img_bytes = buffered.getvalue()
     return base64.b64encode(img_bytes).decode('utf-8')
 
+def _safe_word(text):
+    if text is None:
+        return ""
+    return str(text)
+
 def build_word_meaning_map(verbs: list, nouns: list, particles: list) -> dict:
     """Build a lookup dictionary mapping diacritized & raw words to their grammar category, sub_type, derived status, base_verb, root, and meaning."""
     lookup = {}
 
     for v in verbs:
         if isinstance(v, dict):
-            w = v.get("word", "")
-            m = v.get("meaning", "")
+            w = _safe_word(v.get("word", ""))
+            m = v.get("meaning", "") or ""
             derived = v.get("derived", True)
             sub_type = v.get("sub_type", "Verb")
             base_verb = v.get("base_verb")
             root = v.get("root")
         elif hasattr(v, 'word'):
-            w = getattr(v, 'word', "")
-            m = getattr(v, 'meaning', "")
+            w = _safe_word(getattr(v, 'word', ""))
+            m = getattr(v, 'meaning', "") or ""
             derived = getattr(v, 'derived', True)
             sub_type = getattr(v, 'sub_type', "Verb")
             base_verb = getattr(v, 'base_verb', None)
             root = getattr(v, 'root', None)
         else:
-            w, m = str(v), ""
+            w, m = _safe_word(v), ""
             derived, sub_type, base_verb, root = True, "Verb", None, None
 
         if w:
@@ -205,25 +231,27 @@ def build_word_meaning_map(verbs: list, nouns: list, particles: list) -> dict:
                 "root": root
             }
             lookup[w] = entry
-            lookup[strip_tashkeel(w)] = entry
+            raw = strip_tashkeel(w)
+            if raw:
+                lookup[raw] = entry
 
     for n in nouns:
         if isinstance(n, dict):
-            w = n.get("word", "")
-            m = n.get("meaning", "")
+            w = _safe_word(n.get("word", ""))
+            m = n.get("meaning", "") or ""
             derived = n.get("derived", False)
             sub_type = n.get("sub_type", "Solid Noun")
             base_verb = n.get("base_verb")
             root = n.get("root")
         elif hasattr(n, 'word'):
-            w = getattr(n, 'word', "")
-            m = getattr(n, 'meaning', "")
+            w = _safe_word(getattr(n, 'word', ""))
+            m = getattr(n, 'meaning', "") or ""
             derived = getattr(n, 'derived', False)
             sub_type = getattr(n, 'sub_type', "Solid Noun")
             base_verb = getattr(n, 'base_verb', None)
             root = getattr(n, 'root', None)
         else:
-            w, m = str(n), ""
+            w, m = _safe_word(n), ""
             derived, sub_type, base_verb, root = False, "Solid Noun", None, None
 
         if w:
@@ -237,21 +265,23 @@ def build_word_meaning_map(verbs: list, nouns: list, particles: list) -> dict:
                 "root": root
             }
             lookup[w] = entry
-            lookup[strip_tashkeel(w)] = entry
+            raw = strip_tashkeel(w)
+            if raw:
+                lookup[raw] = entry
 
     for p in particles:
         if isinstance(p, dict):
-            w = p.get("word") or p.get("particle", "")
-            m = p.get("meaning", "")
+            w = _safe_word(p.get("word") or p.get("particle", ""))
+            m = p.get("meaning", "") or ""
             p_type = p.get("type", "Particle (حَرْف)")
-            effect = p.get("effect", "")
+            effect = p.get("effect", "") or ""
         elif hasattr(p, 'word'):
-            w = getattr(p, 'word', "")
-            m = getattr(p, 'meaning', "")
+            w = _safe_word(getattr(p, 'word', ""))
+            m = getattr(p, 'meaning', "") or ""
             p_type = getattr(p, 'type', "Particle (حَرْف)")
-            effect = getattr(p, 'effect', "")
+            effect = getattr(p, 'effect', "") or ""
         else:
-            w = str(p)
+            w = _safe_word(p)
             m = ""
             p_type = "Particle (حَرْف)"
             effect = ""
@@ -267,7 +297,9 @@ def build_word_meaning_map(verbs: list, nouns: list, particles: list) -> dict:
                 "root": None
             }
             lookup[w] = entry
-            lookup[strip_tashkeel(w)] = entry
+            raw = strip_tashkeel(w)
+            if raw:
+                lookup[raw] = entry
 
     return lookup
 
@@ -1368,6 +1400,35 @@ nav_page = st.sidebar.radio(
 )
 
 st.sidebar.markdown("---")
+
+input_mode = st.sidebar.radio(
+    "📥 Input Method",
+    ["📁 Upload Image", "✏️ Input Text"],
+    index=0 if st.session_state.input_mode == "📁 Upload Image" else 1,
+    key="input_mode_selector"
+)
+st.session_state.input_mode = input_mode
+
+if input_mode != st.session_state.prev_input_mode:
+    st.session_state.prev_input_mode = input_mode
+    st.session_state.current_file = ""
+    st.session_state.diacritized_text = ""
+    st.session_state.extracted_text = ""
+    st.session_state.processed_by = ""
+    st.session_state.verbs = []
+    st.session_state.nouns = []
+    st.session_state.particles = []
+    st.session_state.cropped_img = None
+    st.session_state.cropper_collapsed = False
+    st.session_state.sarf_results = None
+    st.session_state.sarf_word = ""
+    st.session_state.verb_results = None
+    st.session_state.last_analyzed_verb = ""
+    st.session_state.noun_results = None
+    st.session_state.last_analyzed_noun = ""
+    st.rerun()
+
+st.sidebar.markdown("---")
 st.sidebar.subheader("🎙️ Text-to-Speech (TTS)")
 tts_engine_choice = st.sidebar.radio(
     "Arabic Voice Engine:",
@@ -1396,33 +1457,6 @@ if nav_page == "📖 Diacritizer & Analyzer":
         st.sidebar.info("💡 **Tip:** Hybrid Mode uses local EasyOCR first ($0 cost), then sends raw text to Gemini 3.5 Flash-Lite to fix typos, add Tashkeel, and classify verbs/nouns.")
     else:
         st.sidebar.info("💡 **Tip:** Full Gemini Vision mode sends the image crop directly to Gemini, allowing it to perform OCR, Tashkeel, and word classification in a single step.")
-
-    input_mode = st.sidebar.radio(
-        "📥 Input Method",
-        ["📁 Upload Image", "✏️ Input Text"],
-        index=0 if st.session_state.input_mode == "📁 Upload Image" else 1,
-        key="input_mode_selector"
-    )
-    st.session_state.input_mode = input_mode
-
-    if input_mode != st.session_state.prev_input_mode:
-        st.session_state.prev_input_mode = input_mode
-        st.session_state.current_file = ""
-        st.session_state.diacritized_text = ""
-        st.session_state.extracted_text = ""
-        st.session_state.processed_by = ""
-        st.session_state.verbs = []
-        st.session_state.nouns = []
-        st.session_state.particles = []
-        st.session_state.cropped_img = None
-        st.session_state.cropper_collapsed = False
-        st.session_state.sarf_results = None
-        st.session_state.sarf_word = ""
-        st.session_state.verb_results = None
-        st.session_state.last_analyzed_verb = ""
-        st.session_state.noun_results = None
-        st.session_state.last_analyzed_noun = ""
-        st.rerun()
 
     selected_file_name = "Direct Text Input"
     cropped_img = None
@@ -2427,7 +2461,11 @@ if nav_page == "📖 Diacritizer & Analyzer":
             if not text_input_val.strip():
                 st.warning("Please enter some Arabic text first.")
             else:
-                with st.spinner("Processing text and applying Tashkeel..."):
+                paragraphs = [p.strip() for p in re.split(r'\n\s*\n', text_input_val.strip()) if p.strip()]
+                if len(paragraphs) <= 1:
+                    paragraphs = [p.strip() for p in text_input_val.strip().splitlines() if p.strip()]
+                para_count = len(paragraphs)
+                with st.spinner(f"Processing {para_count} paragraph{'s' if para_count != 1 else ''} and applying Tashkeel..."):
                     try:
                         gemini_res = gemini_tashkeel(text_input_val.strip())
                         diacritized_text = gemini_res.get("tashkeel_text", text_input_val.strip())

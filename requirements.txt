@@ -3,7 +3,6 @@ streamlit-cropper
 easyocr
 mishkal
 arabic-reshaper
-arabic_reshaper
 python-bidi
 Pillow
 numpy
@@ -16,3 +15,6 @@ pypdf
 pdf2image
 edge-tts
 gTTS
+libsql-experimental
+pandas
+pydantic
