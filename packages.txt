@@ -1,3 +1,2 @@
-default-jre
 poppler-utils
 libgl1

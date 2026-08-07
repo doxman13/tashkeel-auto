@@ -21,7 +21,6 @@ def patched_connect(*args, **kwargs):
 sqlite3.connect = patched_connect
 
 import mishkal.tashkeel
-from farasa.stemmer import FarasaStemmer
 from deep_translator import GoogleTranslator
 import arabic_reshaper
 from bidi.algorithm import get_display
@@ -1342,11 +1341,22 @@ def load_mishkal_model():
 reader = load_ocr_model()
 mishkal_voweler = load_mishkal_model()
 
-@st.cache_resource
-def load_farasa_stemmer():
-    return FarasaStemmer(interactive=True)
+def extract_root_clean(word: str, info: dict | None = None) -> tuple[str, str]:
+    """
+    Extract clean root string (e.g. 'بسم') and display string (e.g. 'ب - س - م').
+    Prefers Gemini's returned root field when available.
+    """
+    if info and isinstance(info, dict):
+        g_root = info.get("root")
+        if g_root and g_root != "N/A":
+            clean = g_root.replace("-", "").strip()
+            display = " - ".join(g_root.replace("-", " ").split())
+            return clean, display
 
-farasa_stemmer = load_farasa_stemmer()
+    raw = strip_tashkeel(word) if word else ""
+    clean = re.sub(r'[^\u0621-\u064A]', '', raw)
+    display = " - ".join(list(clean)) if clean else "N/A"
+    return clean, display
 
 # Initialize session state variables
 if 'extracted_text' not in st.session_state:
@@ -1991,20 +2001,8 @@ if nav_page == "📖 Diacritizer & Analyzer":
             if selected_word:
                 raw_selected = strip_tashkeel(selected_word)
                 info = word_map.get(selected_word) or word_map.get(raw_selected)
-                # 1. Grab Gemini's root from lookup object
-                gemini_root = info.get("root") if info else None
-                if gemini_root and gemini_root != "N/A":
-                    # Formats Gemini's "ب-س-م" cleanly to "ب - س - م"
-                    root_display = " - ".join(gemini_root.replace("-", " ").split())
-                else:
-                    # 2. Fallback to Farasa ONLY if Gemini didn't return a root
-                    try:
-                        stemmed = farasa_stemmer.stem(selected_word)
-                        clean_root = re.sub(r'[^\u0621-\u064A]', '', stemmed)
-                        root_display = " - ".join(list(clean_root)) if clean_root else "N/A"
-                    except Exception:
-                        root_display = "N/A"
-                # 3. Always render the card container (OUTSIDE the if/else block)
+                clean_root, root_display = extract_root_clean(selected_word, info)
+                # Render the card container
                 with st.container(border=True):
                     col_w1, col_w2 = st.columns([1, 2])
                     with col_w1:
@@ -2129,15 +2127,8 @@ if nav_page == "📖 Diacritizer & Analyzer":
                         st.info("No verbs detected in this crop. You can enter one manually below.")
                         verb_to_analyze = st.text_input("Type an Arabic verb to analyze", key="verb_custom_only")
                     if verb_to_analyze:
-                        # 1. Run local Farasa Stemmer first to get the root
-                        try:
-                            stemmed_verb = farasa_stemmer.stem(verb_to_analyze)
-                            clean_verb_root = re.sub(r'[^\u0621-\u064A]', '', stemmed_verb)
-                            verb_root_display = " - ".join(list(clean_verb_root))
-                        except Exception as e:
-                            st.error(f"Farasa Stemmer Error: {e}")
-                            clean_verb_root = verb_to_analyze
-                            verb_root_display = "Unknown"
+                        sel_v_info = (word_map.get(verb_to_analyze) or word_map.get(strip_tashkeel(verb_to_analyze))) if 'word_map' in locals() else None
+                        clean_verb_root, verb_root_display = extract_root_clean(verb_to_analyze, sel_v_info)
                         try:
                             verb_trans = GoogleTranslator(source='ar', target='en').translate(verb_to_analyze)
                             verb_root_trans = GoogleTranslator(source='ar', target='en').translate(clean_verb_root)
@@ -2255,17 +2246,8 @@ if nav_page == "📖 Diacritizer & Analyzer":
                         st.info("No nouns detected in this crop. You can enter one manually below.")
                         noun_to_analyze = st.text_input("Type an Arabic noun to analyze", key="noun_custom_only")
                     if noun_to_analyze:
-                        # 1. Run local Farasa Stemmer first to get the root
-                        try:
-                            stemmed_noun = farasa_stemmer.stem(noun_to_analyze)
-                            clean_noun_root = re.sub(r'[^\u0621-\u064A]', '', stemmed_noun)
-                            noun_root_display = " - ".join(list(clean_noun_root))
-                        except Exception as e:
-                            st.error(f"Farasa Stemmer Error: {e}")
-                            clean_noun_root = noun_to_analyze
-                            noun_root_display = "Unknown"
-                        # Look up noun metadata in word_map
                         sel_noun_obj = word_map.get(noun_to_analyze) or word_map.get(strip_tashkeel(noun_to_analyze)) or {}
+                        clean_noun_root, noun_root_display = extract_root_clean(noun_to_analyze, sel_noun_obj)
                         n_derived = sel_noun_obj.get("derived", False)
                         n_sub_type = sel_noun_obj.get("sub_type", "Solid Noun")
                         n_base_verb = sel_noun_obj.get("base_verb")
@@ -2888,13 +2870,7 @@ elif nav_page == "📚 Saved Entry Inspector":
         if selected_hist_word:
             raw_sel = strip_tashkeel(selected_hist_word)
             h_info = saved_word_map.get(selected_hist_word) or saved_word_map.get(raw_sel)
-            
-            try:
-                stemmed = farasa_stemmer.stem(selected_hist_word)
-                clean_root = re.sub(r'[^\u0621-\u064A]', '', stemmed)
-                root_display = " - ".join(list(clean_root)) if clean_root else "N/A"
-            except Exception:
-                root_display = "N/A"
+            clean_root, root_display = extract_root_clean(selected_hist_word, h_info)
 
             with st.container(border=True):
                 col_hw1, col_hw2 = st.columns([1, 2])
@@ -3020,13 +2996,8 @@ elif nav_page == "📚 Saved Entry Inspector":
                 hv_to_analyze = v_map.get(sel_hv_disp, sel_hv_disp)
                 
                 if hv_to_analyze:
-                    try:
-                        h_stemmed_v = farasa_stemmer.stem(hv_to_analyze)
-                        h_clean_v_root = re.sub(r'[^\u0621-\u064A]', '', h_stemmed_v)
-                        h_v_root_disp = " - ".join(list(h_clean_v_root))
-                    except Exception:
-                        h_clean_v_root = hv_to_analyze
-                        h_v_root_disp = "Unknown"
+                    h_v_info = saved_word_map.get(hv_to_analyze) if 'saved_word_map' in locals() else None
+                    h_clean_v_root, h_v_root_disp = extract_root_clean(hv_to_analyze, h_v_info)
                     
                     st.info(f"🌱 Extracted Local Root: `{h_v_root_disp}`")
                     
@@ -3148,13 +3119,7 @@ elif nav_page == "📚 Saved Entry Inspector":
                 hn_root_val = hn_obj.get("root")
                 
                 if hn_to_analyze:
-                    try:
-                        h_stemmed_n = farasa_stemmer.stem(hn_to_analyze)
-                        h_clean_n_root = re.sub(r'[^\u0621-\u064A]', '', h_stemmed_n)
-                        h_n_root_disp = " - ".join(list(h_clean_n_root))
-                    except Exception:
-                        h_clean_n_root = hn_to_analyze
-                        h_n_root_disp = "Unknown"
+                    h_clean_n_root, h_n_root_disp = extract_root_clean(hn_to_analyze, hn_obj if isinstance(hn_obj, dict) else None)
                     
                     st.markdown(f"""
                     <div style="background-color: rgba(33, 150, 243, 0.08); border-left: 4px solid #2196F3; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 15px;">
