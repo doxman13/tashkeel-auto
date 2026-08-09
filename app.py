@@ -487,6 +487,155 @@ def aggregate_vocabulary_across_entries(entries):
     return _finalize(verbs_index), _finalize(nouns_index), _finalize(particles_index)
 
 
+def get_sarf_words_across_entries(entries):
+    """Aggregate words that already have sarf (morphological) analysis across all saved entries.
+
+    Returns (sarf_verbs, sarf_nouns), each a sorted list of dicts with keys:
+    word, meaning, sub_type, derived, base_verb, root, sarf (dict), count, sources.
+    """
+    sarf_verbs_index, sarf_nouns_index = {}, {}
+
+    for row in entries:
+        entry_id, timestamp, fname, img_b64, tashkeel, translation, verbs_str, nouns_str, particles_str, deep_sarf_str = row
+        source_info = {"id": entry_id, "timestamp": timestamp, "source": fname}
+
+        verb_lookup = {}
+        noun_lookup = {}
+        try:
+            verbs = json.loads(verbs_str) if verbs_str else []
+        except Exception:
+            verbs = []
+        for v in verbs:
+            if isinstance(v, dict):
+                w = v.get("word", "")
+                if w:
+                    verb_lookup[w] = v
+                    raw = strip_tashkeel(w)
+                    if raw:
+                        verb_lookup[raw] = v
+
+        try:
+            nouns = json.loads(nouns_str) if nouns_str else []
+        except Exception:
+            nouns = []
+        for n in nouns:
+            if isinstance(n, dict):
+                w = n.get("word", "")
+                if w:
+                    noun_lookup[w] = n
+                    raw = strip_tashkeel(w)
+                    if raw:
+                        noun_lookup[raw] = n
+
+        try:
+            deep_sarf = json.loads(deep_sarf_str) if deep_sarf_str else {}
+        except Exception:
+            deep_sarf = {}
+
+        last_verb = deep_sarf.get("last_verb")
+        verb_sarf = deep_sarf.get("verb_sarf")
+        if last_verb and verb_sarf:
+            raw_verb = strip_tashkeel(last_verb)
+            matched = verb_lookup.get(last_verb) or verb_lookup.get(raw_verb)
+            if matched:
+                word = matched.get("word", last_verb)
+                meaning = matched.get("meaning", "") or ""
+                sub_type = matched.get("sub_type", "Verb")
+                derived = matched.get("derived", True)
+                base_verb = matched.get("base_verb")
+                root = matched.get("root")
+            else:
+                word = last_verb
+                meaning = ""
+                sub_type = "Verb"
+                derived = True
+                base_verb = None
+                root = None
+
+            key = raw_verb or word
+            if key not in sarf_verbs_index:
+                sarf_verbs_index[key] = {
+                    "word": word,
+                    "meanings": [meaning] if meaning else [],
+                    "sub_type": sub_type,
+                    "derived": derived,
+                    "base_verb": base_verb,
+                    "root": root,
+                    "sarf": verb_sarf,
+                    "count": 0,
+                    "sources": [],
+                }
+            rec = sarf_verbs_index[key]
+            rec["count"] += 1
+            rec["sources"].append(source_info)
+            if meaning and meaning not in rec["meanings"]:
+                rec["meanings"].append(meaning)
+            if not rec["base_verb"] and base_verb:
+                rec["base_verb"] = base_verb
+            if not rec["root"] and root:
+                rec["root"] = root
+
+        last_noun = deep_sarf.get("last_noun")
+        noun_sarf = deep_sarf.get("noun_sarf")
+        if last_noun and noun_sarf:
+            raw_noun = strip_tashkeel(last_noun)
+            matched = noun_lookup.get(last_noun) or noun_lookup.get(raw_noun)
+            if matched:
+                word = matched.get("word", last_noun)
+                meaning = matched.get("meaning", "") or ""
+                sub_type = matched.get("sub_type", "Solid Noun")
+                derived = matched.get("derived", False)
+                base_verb = matched.get("base_verb")
+                root = matched.get("root")
+            else:
+                word = last_noun
+                meaning = ""
+                sub_type = "Solid Noun"
+                derived = False
+                base_verb = None
+                root = None
+
+            key = raw_noun or word
+            if key not in sarf_nouns_index:
+                sarf_nouns_index[key] = {
+                    "word": word,
+                    "meanings": [meaning] if meaning else [],
+                    "sub_type": sub_type,
+                    "derived": derived,
+                    "base_verb": base_verb,
+                    "root": root,
+                    "sarf": noun_sarf,
+                    "count": 0,
+                    "sources": [],
+                }
+            rec = sarf_nouns_index[key]
+            rec["count"] += 1
+            rec["sources"].append(source_info)
+            if meaning and meaning not in rec["meanings"]:
+                rec["meanings"].append(meaning)
+            if not rec["base_verb"] and base_verb:
+                rec["base_verb"] = base_verb
+            if not rec["root"] and root:
+                rec["root"] = root
+
+    def _finalize(records):
+        result = []
+        for r in records.values():
+            r["meaning"] = "; ".join(r["meanings"]) if r["meanings"] else ""
+            del r["meanings"]
+            seen_ids = set()
+            unique_sources = []
+            for s in r["sources"]:
+                if s["id"] not in seen_ids:
+                    seen_ids.add(s["id"])
+                    unique_sources.append(s)
+            r["sources"] = unique_sources
+            result.append(r)
+        return sorted(result, key=lambda x: (-x["count"], x["word"]))
+
+    return _finalize(sarf_verbs_index), _finalize(sarf_nouns_index)
+
+
 def _escape_html_attr(text: str) -> str:
     """Escape characters that would break HTML attribute values."""
     return text.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
@@ -3383,6 +3532,7 @@ elif nav_page == "🔍 Combined Vocabulary":
         st.info("No entries saved in the database yet. Process a crop on the 📖 Diacritizer & Analyzer page and save an entry.")
     else:
         all_verbs, all_nouns, all_particles = aggregate_vocabulary_across_entries(entries)
+        sarf_verbs, sarf_nouns = get_sarf_words_across_entries(entries)
         total_verb_occ = sum(r["count"] for r in all_verbs)
         total_noun_occ = sum(r["count"] for r in all_nouns)
         total_particle_occ = sum(r["count"] for r in all_particles)
@@ -3392,7 +3542,7 @@ elif nav_page == "🔍 Combined Vocabulary":
             f"saved entries, giving you a master vocabulary list with source references."
         )
         st.space("medium")
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.metric(label="Saved entries", value=len(entries))
         with col2:
@@ -3401,12 +3551,15 @@ elif nav_page == "🔍 Combined Vocabulary":
             st.metric(label="Unique nouns (اسْم)", value=len(all_nouns))
         with col4:
             st.metric(label="Total occurrences", value=total_verb_occ + total_noun_occ + total_particle_occ)
+        with col5:
+            st.metric(label="Words with Sarf", value=len(sarf_verbs) + len(sarf_nouns))
 
         st.space("medium")
-        tab_v, tab_n, tab_p = st.tabs([
+        tab_v, tab_n, tab_p, tab_s = st.tabs([
             f"⚙️ All Verbs ({len(all_verbs)})",
             f"🏷️ All Nouns ({len(all_nouns)})",
             f"📌 All Particles ({len(all_particles)})",
+            f"📖 Words with Sarf ({len(sarf_verbs) + len(sarf_nouns)})",
         ])
 
         with tab_v:
@@ -3508,6 +3661,99 @@ elif nav_page == "🔍 Combined Vocabulary":
                 )
             else:
                 st.caption("No particles found across saved entries.")
+
+        with tab_s:
+            if sarf_verbs or sarf_nouns:
+                tab_sv, tab_sn = st.tabs([
+                    f"⚙️ Sarf Verbs ({len(sarf_verbs)})",
+                    f"🏷️ Sarf Nouns ({len(sarf_nouns)})",
+                ])
+
+                with tab_sv:
+                    if sarf_verbs:
+                        sv_rows = []
+                        for sv in sarf_verbs:
+                            sources_str = ", ".join(f"#{s['id']}" for s in sv["sources"])
+                            sarf_data = sv.get("sarf", {})
+                            sv_rows.append({
+                                "Word (الْكَلِمَة)": sv["word"],
+                                "Meaning (الْمَعْنَى)": sv["meaning"] or "N/A",
+                                "Type (النَّوْع)": sv["sub_type"],
+                                "Derived (مُشْتَقّ)": "Yes ⚡" if sv["derived"] else "No",
+                                "Base Verb (الأَصْل)": sv["base_verb"] if sv["base_verb"] else "N/A",
+                                "Root (الْجَذْر)": sv["root"] if sv["root"] else "N/A",
+                                "Wazn / Form (الْوَزْن)": sarf_data.get("wazn", "N/A"),
+                                "Madi / Past (الْمَاضِي)": sarf_data.get("madi", "N/A"),
+                                "Mudari / Present (الْمُضَارِع)": sarf_data.get("mudari", "N/A"),
+                                "Amr / Imperative (الأَمْر)": sarf_data.get("amr", "N/A"),
+                                "Masdar / Verbal Noun (الْمَصْدَر)": sarf_data.get("masdar", "N/A"),
+                                "Ism Fa'il (اسْم الْفَاعِل)": sarf_data.get("ism_faail", "N/A"),
+                                "Ism Maf'ul (اسْم الْمَفْعُول)": sarf_data.get("ism_mafool", "N/A"),
+                                "Occurrences": sv["count"],
+                                "Source Entries (#)": sources_str,
+                            })
+                        sv_df = pd.DataFrame(sv_rows)
+                        st.caption(
+                            f"Showing {len(sv_df)} unique verbs with sarf, deduplicated across all saved entries. "
+                            ":orange[Occurrences] counts how many entries each verb appeared in."
+                        )
+                        render_custom_table(sv_df)
+                        sv_csv = sv_df.to_csv(index=False).encode("utf-8")
+                        st.download_button(
+                            label="Download sarf verbs as CSV",
+                            icon=":material/download:",
+                            data=sv_csv,
+                            file_name="combined_sarf_verbs.csv",
+                            mime="text/csv",
+                            key="download_combined_sarf_verbs",
+                            width="stretch",
+                        )
+                    else:
+                        st.caption("No verbs with sarf found across saved entries.")
+
+                with tab_sn:
+                    if sarf_nouns:
+                        sn_rows = []
+                        for sn in sarf_nouns:
+                            sources_str = ", ".join(f"#{s['id']}" for s in sn["sources"])
+                            sarf_data = sn.get("sarf", {})
+                            sn_rows.append({
+                                "Word (الْكَلِمَة)": sn["word"],
+                                "Meaning (الْمَعْنَى)": sn["meaning"] or "N/A",
+                                "Type (النَّوْع)": sn["sub_type"],
+                                "Derived (مُشْتَقّ)": "Yes ⚡" if sn["derived"] else "No",
+                                "Base Verb (الأَصْل)": sn["base_verb"] if sn["base_verb"] else "N/A",
+                                "Root (الْجَذْر)": sn["root"] if sn["root"] else "N/A",
+                                "Noun Type (نَوْع الاسْم)": sarf_data.get("noun_type", "N/A"),
+                                "Category (التَّصْنِيف)": sarf_data.get("category", "N/A"),
+                                "Wazn / Pattern (الْوَزْن)": sarf_data.get("wazn", "N/A"),
+                                "Singular (المُفْرَد)": sarf_data.get("singular", "N/A"),
+                                "Dual (المُثَنَّى)": sarf_data.get("dual", "N/A"),
+                                "Plural (الجَمْع)": sarf_data.get("plural", "N/A"),
+                                "Root Verb (الْفِعْل الأَصْل)": sarf_data.get("root_verb", "N/A"),
+                                "Occurrences": sn["count"],
+                                "Source Entries (#)": sources_str,
+                            })
+                        sn_df = pd.DataFrame(sn_rows)
+                        st.caption(
+                            f"Showing {len(sn_df)} unique nouns with sarf, deduplicated across all saved entries. "
+                            ":orange[Occurrences] counts how many entries each noun appeared in."
+                        )
+                        render_custom_table(sn_df)
+                        sn_csv = sn_df.to_csv(index=False).encode("utf-8")
+                        st.download_button(
+                            label="Download sarf nouns as CSV",
+                            icon=":material/download:",
+                            data=sn_csv,
+                            file_name="combined_sarf_nouns.csv",
+                            mime="text/csv",
+                            key="download_combined_sarf_nouns",
+                            width="stretch",
+                        )
+                    else:
+                        st.caption("No nouns with sarf found across saved entries.")
+            else:
+                st.caption("No words with sarf found across saved entries.")
 elif nav_page == "🖼️ Saved Entry Gallery":
     st.title("🖼️ Saved Entry Gallery")
 
